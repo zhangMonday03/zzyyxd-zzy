@@ -1202,6 +1202,40 @@ def main():
     else:
         log("✅ 没有使用非原密码的账号，无需生成 password-changed.txt")
     
+    # 保存结果到JSON文件，供汇总脚本使用
+    try:
+        result_data = {
+            'group_index': int(account_group) if account_group else 0,
+            'accounts': []
+        }
+        
+        for i, result in enumerate(all_results):
+            username = usernames[result['account_index'] - 1]
+            account_data = {
+                'account_index': result['account_index'],
+                'username': username,
+                'final_jindou': result['final_jindou'],
+                'initial_jindou': result['initial_jindou'],
+                'jindou_reward': result['jindou_reward'],
+                'jindou_success': result['jindou_success'],
+                'jindou_status': result['jindou_status'],
+                'password_error': result.get('password_error', False),
+                'actual_password': result.get('actual_password'),
+                'has_jindou_reward': result.get('has_jindou_reward', False)
+            }
+            result_data['accounts'].append(account_data)
+        
+        # 使用账号组编号作为文件名的一部分
+        group_num = int(account_group) if account_group else 0
+        result_filename = f'jlc_result_{group_num}.json'
+        
+        with open(result_filename, 'w', encoding='utf-8') as f:
+            json.dump(result_data, f, ensure_ascii=False, indent=2)
+        
+        log(f"✅ 已生成结果文件: {result_filename}")
+    except Exception as e:
+        log(f"⚠ 保存结果文件失败: {e}")
+    
     # 根据失败退出标志决定退出码
     all_failed_accounts = failed_accounts + password_error_accounts
     if enable_failure_exit and all_failed_accounts:
