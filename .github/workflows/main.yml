@@ -7,6 +7,10 @@ on:
     - cron: '0 23 * * *'
     - cron: '0 6 * * *'
 
+env:
+  # 设置时区为北京时间
+  TZ: Asia/Shanghai
+
 jobs:
   # ==================================================================================
   # 数据预处理
@@ -94,7 +98,7 @@ jobs:
 
     steps:
       - name: '检出代码'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # --- 环境配置部分  ---
       - name: '设置Python环境'
@@ -109,7 +113,7 @@ jobs:
 
       - name: '设置时区为北京时间'
         run: |
-          sudo timedatectl set-timezone Asia/Shanghai
+          sudo timedatectl set-timezone Asia/Shanghai || true
           echo "当前时间: $(date)"
 
       - name: '安装依赖'
@@ -150,22 +154,99 @@ jobs:
           if [ -f password-changed.txt ]; then
             mv password-changed.txt "第${{ matrix.index }}组密码变更记录.txt"
           fi
-          if [ -d logs ]; then
-            for f in logs/*.log; do
-              if [ -f "$f" ]; then
-                mv "$f" "logs/第${{ matrix.index }}组_$(basename "$f")"
-              fi
-            done
-          fi
 
       - name: '上传密码修改记录'
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: 第${{ matrix.index }}组
-          path: |
-            第${{ matrix.index }}组密码变更记录.txt
-            logs/第${{ matrix.index }}组_*.log
+          path: 第${{ matrix.index }}组密码变更记录.txt
           if-no-files-found: ignore
           archive: false
           retention-days: 3
+
+      - name: '上传结果文件供汇总'
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: jlc_result_${{ matrix.index }}.json
+          if-no-files-found: ignore
+          archive: false
+          retention-days: 1
+
+  # ==================================================================================
+  # 汇总所有账号组结果
+  # ==================================================================================
+  summary:
+    needs: signin-process
+    runs-on: ubuntu-latest
+    if: always()
+
+    # 注入环境变量（用于推送）
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      WECHAT_WEBHOOK_KEY: ${{ secrets.WECHAT_WEBHOOK_KEY }}
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+      PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      SERVERCHAN_SCKEY: ${{ secrets.SERVERCHAN_SCKEY }}
+      SERVERCHAN3_SCKEY: ${{ secrets.SERVERCHAN3_SCKEY }}
+      COOLPUSH_SKEY: ${{ secrets.COOLPUSH_SKEY }}
+      CUSTOM_WEBHOOK: ${{ secrets.CUSTOM_WEBHOOK }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: '检出代码'
+        uses: actions/checkout@v4
+
+      - name: '设置Python环境'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: '设置时区为北京时间'
+        run: |
+          sudo timedatectl set-timezone Asia/Shanghai || true
+          echo "当前时间: $(date)"
+
+      - name: '安装依赖'
+        run: |
+          pip install --upgrade pip
+          pip install requests==2.26.0
+          pip install openpyxl==3.1.2
+
+      - name: '下载所有结果文件'
+        uses: actions/download-artifact@v8
+        with:
+          path: ./artifacts
+          pattern: jlc_result_*.json
+
+      - name: '移动结果文件到工作目录'
+        run: |
+          echo "下载的artifacts内容:"
+          ls -la ./artifacts/
+          
+          # 移动所有结果文件到当前目录
+          find ./artifacts -name "jlc_result_*.json" -exec mv {} . \; 2>/dev/null || true
+          
+          echo "工作目录中的结果文件:"
+          ls -la jlc_result_*.json 2>/dev/null || echo "未找到结果文件"
+
+      - name: '运行汇总脚本'
+        run: |
+          python ./jlc_summary.py
+
+      - name: '获取生成的Excel文件名'
+        id: get-excel
+        run: |
+          excel_file=$(ls *.xlsx 2>/dev/null | head -1)
+          echo "excel_file=$excel_file" >> $GITHUB_OUTPUT
+          echo "找到的Excel文件: $excel_file"
+
+      - name: '上传金豆排名Excel'
+        if: steps.get-excel.outputs.excel_file != ''
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.get-excel.outputs.excel_file }}
+          if-no-files-found: ignore
+          archive: false
+          retention-days: 7
