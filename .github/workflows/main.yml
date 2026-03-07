@@ -123,6 +123,7 @@ jobs:
           pip install serverchan_sdk==1.0.6
           pip install PyExecJS
           pip install DrissionPage
+          pip install openpyxl
 
       - name: '准备Chrome驱动'
         uses: nanasess/setup-chromedriver@v2
@@ -150,22 +151,83 @@ jobs:
           if [ -f password-changed.txt ]; then
             mv password-changed.txt "第${{ matrix.index }}组密码变更记录.txt"
           fi
-          if [ -d logs ]; then
-            for f in logs/*.log; do
-              if [ -f "$f" ]; then
-                mv "$f" "logs/第${{ matrix.index }}组_$(basename "$f")"
-              fi
-            done
-          fi
+
+      - name: '上传签到结果JSON'
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signin-result-group${{ matrix.index }}.json
+          path: signin-result.json
+          if-no-files-found: ignore
+          archive: false
+          retention-days: 1
 
       - name: '上传密码修改记录'
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: 第${{ matrix.index }}组
-          path: |
-            第${{ matrix.index }}组密码变更记录.txt
-            logs/第${{ matrix.index }}组_*.log
+          name: 第${{ matrix.index }}组密码变更记录.txt
+          path: 第${{ matrix.index }}组密码变更记录.txt
+          if-no-files-found: ignore
+          archive: false
+          retention-days: 3
+
+  # ==================================================================================
+  # 汇总处理
+  # 收集所有签到结果，生成Excel排名，推送通知
+  # ==================================================================================
+  summary:
+    needs: signin-process
+    runs-on: ubuntu-latest
+    if: always()
+    
+    # 注入环境变量用于推送
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      WECHAT_WEBHOOK_KEY: ${{ secrets.WECHAT_WEBHOOK_KEY }}
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+      PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      SERVERCHAN_SCKEY: ${{ secrets.SERVERCHAN_SCKEY }}
+      SERVERCHAN3_SCKEY: ${{ secrets.SERVERCHAN3_SCKEY }}
+      COOLPUSH_SKEY: ${{ secrets.COOLPUSH_SKEY }}
+      CUSTOM_WEBHOOK: ${{ secrets.CUSTOM_WEBHOOK }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    steps:
+      - name: '检出代码'
+        uses: actions/checkout@v3
+
+      - name: '设置时区为北京时间'
+        run: |
+          sudo timedatectl set-timezone Asia/Shanghai
+          echo "当前时间: $(date)"
+
+      - name: '设置Python环境'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: '安装依赖'
+        run: |
+          pip install --upgrade pip
+          pip install requests openpyxl
+
+      - name: '下载所有签到结果'
+        uses: actions/download-artifact@v8
+        with:
+          path: ./artifacts
+          pattern: signin-result-group*.json
+
+      - name: '生成汇总Excel并推送'
+        run: |
+          python ./jlc_summary.py
+
+      - name: '上传Excel排名文件'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.EXCEL_FILENAME }}
+          path: ${{ env.EXCEL_FILENAME }}
           if-no-files-found: ignore
           archive: false
           retention-days: 3
