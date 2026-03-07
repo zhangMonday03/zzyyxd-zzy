@@ -118,14 +118,7 @@ def generate_excel():
         actual_password = acc.get('actual_password', '')
         group_index = acc.get('group_index', 0)
         
-        # 脱敏密码显示
-        if actual_password:
-            if len(actual_password) <= 3:
-                display_password = actual_password
-            else:
-                display_password = actual_password[:3] + '*****'
-        else:
-            display_password = ''
+        display_password = actual_password if actual_password else ''
         
         row_data = [
             rank,
@@ -146,7 +139,7 @@ def generate_excel():
             if col_num == 1:
                 cell.font = Font(bold=True)
             
-            # 金豆数量列使用不同颜色区分
+            # 金豆数量列使用不同颜色区分（字体颜色）
             if col_num == 2:
                 if final_jindou >= 500:
                     cell.font = Font(color="C00000", bold=True)  # 深红色
@@ -223,7 +216,7 @@ def get_push_content():
             for group, indices in pwd_by_group.items():
                 content_parts.append(f"{group}组账号{','.join(indices)}(密码错误)")
         
-        return f"{month}月{day}日立创金豆签到有{'、'.join(content_parts)}失败"
+        return f"{month}月{day}日立创金豆签到有{'/'.join(content_parts)}失败"
 
 def get_workflow_url():
     """获取GitHub Actions工作流运行页面链接"""
@@ -520,7 +513,7 @@ def push_all_notifications(excel_file):
     push_text = f"{title}\n\n{content}"
     
     if workflow_url:
-        push_text += f"\n\n请访问以下链接，在Artifacts板块下载金豆详细排名：\n{workflow_url}"
+        push_text += f"\n请访问以下链接，在Artifacts板块下载金豆详细排名：\n{workflow_url}"
     
     log(f"推送内容:\n{push_text}")
     
