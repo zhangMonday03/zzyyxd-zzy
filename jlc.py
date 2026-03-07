@@ -53,9 +53,6 @@ in_summary = False
 summary_logs = []
 
 # 全局连续失败状态控制
-consecutive_oshwhub_fails = 0
-skip_oshwhub_signin = False
-
 consecutive_jindou_fails = 0
 skip_jindou_signin = False
 
@@ -64,19 +61,6 @@ def log(msg):
     print(full_msg, flush=True)
     if in_summary:
         summary_logs.append(msg)  # 只收集纯消息，无时间戳
-
-def format_nickname(nickname):
-    """格式化昵称，只显示第一个字和最后一个字，中间用星号代替"""
-    if not nickname or len(nickname.strip()) == 0:
-        return "未知用户"
-    
-    nickname = nickname.strip()
-    if len(nickname) == 1:
-        return f"{nickname}*"
-    elif len(nickname) == 2:
-        return f"{nickname[0]}*"
-    else:
-        return f"{nickname[0]}{'*' * (len(nickname)-2)}{nickname[-1]}"
 
 def desensitize_password(pwd):
     """脱敏密码显示"""
@@ -177,43 +161,6 @@ def extract_secretkey_from_devtools(driver):
         log(f"❌ DevTools 提取 secretkey 出错: {e}")
     
     return secretkey
-
-def get_oshwhub_points(driver, account_index):
-    """获取开源平台积分数量"""
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            # 获取当前页面的Cookie
-            cookies = driver.get_cookies()
-            cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-            
-            headers = {
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'accept': 'application/json, text/plain, */*',
-                'cookie': cookie_str
-            }
-            
-            # 调用用户信息API获取积分
-            response = requests.get("https://oshwhub.com/api/users", headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if data and data.get('success'):
-                    points = data.get('result', {}).get('points', 0)
-                    return points
-        except Exception:
-            pass  # 静默重试
-        
-        # 重试前刷新页面
-        if attempt < max_retries - 1:
-            try:
-                driver.refresh()
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                time.sleep(1 + random.uniform(0, 1))
-            except:
-                pass
-    
-    log(f"账号 {account_index} - ⚠ 无法获取积分信息")
-    return 0
 
 class JLCClient:
     """调用嘉立创接口"""
@@ -438,118 +385,6 @@ def navigate_and_interact_m_jlc(driver, account_index):
     except Exception as e:
         log(f"账号 {account_index} - 页面刷新出错: {e}")
 
-def is_sunday():
-    """检查今天是否是周日"""
-    return datetime.now().weekday() == 6
-
-def is_last_day_of_month():
-    """检查今天是否是当月最后一天"""
-    today = datetime.now()
-    next_month = today.replace(day=28) + timedelta(days=4)
-    last_day = next_month - timedelta(days=next_month.day)
-    return today.day == last_day.day
-
-def capture_reward_info(driver, account_index, gift_type):
-    """抓取并输出奖励信息，返回礼包领取结果"""
-    try:
-        reward_elem = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, '//p[contains(text(), "恭喜获取")]'))
-        )
-        reward_text = reward_elem.text.strip()
-        gift_name = "七日礼包" if gift_type == "7天" else "月度礼包"
-        log(f"账号 {account_index} - {gift_name}领取结果：{reward_text}")
-        return f"开源平台{gift_name}领取结果: {reward_text}"
-    except Exception as e:
-        log(f"账号 {account_index} - 已点击{gift_type}好礼，未获取到奖励信息(可能已领取过或未达到领取条件)，请自行前往开源平台查看。")
-        return None
-
-def click_gift_buttons(driver, account_index):
-    """根据日期条件点击7天好礼和月度好礼按钮，并抓取奖励信息，返回所有领取结果"""
-    reward_results = []
-    
-    if not is_sunday() and not is_last_day_of_month():
-        return reward_results
-
-    try:
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        
-        log(f"账号 {account_index} - 开始点击礼包按钮...")
-        
-        sunday = is_sunday()
-        last_day = is_last_day_of_month()
-
-        if sunday:
-            # 尝试点击7天好礼
-            try:
-                seven_day_gift = driver.find_element(By.XPATH, '//div[contains(@class, "sign_text__r9zaN")]/span[text()="7天好礼"]')
-                seven_day_gift.click()
-                log(f"账号 {account_index} - ✅ 检测到今天是周日，成功点击7天好礼，祝你周末愉快~")
-                
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                reward_result = capture_reward_info(driver, account_index, "7天")
-                if reward_result:
-                    reward_results.append(reward_result)
-                
-                # 如果也是月底，刷新页面
-                if last_day:
-                    driver.refresh()
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                    time.sleep(10)
-                
-            except Exception as e:
-                log(f"账号 {account_index} - ⚠ 无法点击7天好礼: {e}")
-
-        if last_day:
-            # 尝试点击月度好礼
-            try:
-                monthly_gift = driver.find_element(By.XPATH, '//div[contains(@class, "sign_text__r9zaN")]/span[text()="月度好礼"]')
-                monthly_gift.click()
-                log(f"账号 {account_index} - ✅ 检测到今天是月底，成功点击月度好礼～")          
-                
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                reward_result = capture_reward_info(driver, account_index, "月度")
-                if reward_result:
-                    reward_results.append(reward_result)
-                
-            except Exception as e:
-                log(f"账号 {account_index} - ⚠ 无法点击月度好礼: {e}")
-            
-    except Exception as e:
-        log(f"账号 {account_index} - ❌ 点击礼包按钮时出错: {e}")
-
-    return reward_results
-
-@with_retry
-def get_user_nickname_from_api(driver, account_index):
-    """通过API获取用户昵称"""
-    try:
-        # 获取当前页面的Cookie
-        cookies = driver.get_cookies()
-        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-        
-        headers = {
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'accept': 'application/json, text/plain, */*',
-            'cookie': cookie_str
-        }
-        
-        # 调用用户信息API
-        response = requests.get("https://oshwhub.com/api/users", headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data and data.get('success'):
-                nickname = data.get('result', {}).get('nickname', '')
-                if nickname:
-                    formatted_nickname = format_nickname(nickname)
-                    log(f"账号 {account_index} - 👤 昵称: {formatted_nickname}")
-                    return formatted_nickname
-        
-        log(f"账号 {account_index} - ⚠ 无法获取用户昵称")
-        return None
-    except Exception as e:
-        log(f"账号 {account_index} - ⚠ 获取用户昵称失败: {e}")
-        return None
-
 def run_aliv3_task(username, password, output_file):
     """
     独立进程运行 AliV3，将日志写入文件。
@@ -667,19 +502,12 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     # 初始化结果字典
     result = {
         'account_index': account_index,
-        'nickname': '未知',
-        'oshwhub_status': '未知',
-        'oshwhub_success': False,
-        'initial_points': 0,      # 签到前积分
-        'final_points': 0,        # 签到后积分
-        'points_reward': 0,       # 本次获得积分
-        'reward_results': [],     # 礼包领取结果
         'jindou_status': '未知',
         'jindou_success': False,
         'initial_jindou': 0,
         'final_jindou': 0,
         'jindou_reward': 0,
-        'has_jindou_reward': False,  # 金豆是否有额外奖励
+        'has_jindou_reward': False,
         'token_extracted': False,
         'secretkey_extracted': False,
         'retry_count': retry_count,
@@ -687,7 +515,6 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
         'actual_password': None,  # 实际使用的密码
         'backup_index': -1,  # 使用的备用密码索引，-1表示原密码
         'critical_error': False,  #标记严重错误（如多次调用依赖失败），需跳过重试
-        'login_success': False,   # 标记开源平台登录是否成功
         'jlc_login_success': False # 标记金豆签到的JLC登录是否成功
     }
     
@@ -733,17 +560,17 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             wait = WebDriverWait(driver, 25)
         except Exception as e:
             log(f"账号 {account_index} - ❌ 浏览器初始化失败: {e}")
-            result['oshwhub_status'] = '浏览器启动失败'
+            result['jindou_status'] = '浏览器启动失败'
             # 返回当前结果，外层逻辑会根据重试机制处理
             return result
 
-        # 1. 登录流程
+        # 1. 获取 authCode（用于 JLC 登录）
         log(f"账号 {account_index} - 正在调用 登录(AliV3) 依赖进行登录...")
         
         # 确保 AliV3 已加载
         if AliV3 is None:
              log(f"账号 {account_index} - ❌ 登录依赖未正确加载，无法登录")
-             result['oshwhub_status'] = '依赖缺失'
+             result['jindou_status'] = '依赖缺失'
              return result
 
         current_password = password  # 默认原密码
@@ -810,7 +637,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                     # 所有密码都尝试完毕
                     log(f"账号 {account_index} - ❌ 所有备用密码尝试失败，跳过此账号")
                     result['password_error'] = True
-                    result['oshwhub_status'] = '所有密码错误'
+                    result['jindou_status'] = '所有密码错误'
                     return result
                 
                 current_password = backup_passwords[current_backup_index]
@@ -819,13 +646,13 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             
             if not auth_code:
                 if auth_result is None:
-                     result['oshwhub_status'] = '登录超时'
+                     result['jindou_status'] = '登录超时'
                      return result
                 else:
                      log(f"账号 {account_index} - ❌ 连续 {max_auth_retries} 次调用登录依赖失败，未返回有效AuthCode")
                      log("❌ 登录脚本输出如下：")
                      log(auth_result)
-                     result['oshwhub_status'] = 'authCode获取异常'
+                     result['jindou_status'] = 'authCode获取异常'
                      result['critical_error'] = True  # 标记为严重错误
                      return result
             else:
@@ -835,129 +662,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                 log(f"账号 {account_index} - ✅ 成功获取 authCode")
                 break
 
-        # 判断登录结果
-        if auth_code:
-            # 拼接 URL 并跳转
-            login_url = f"https://oshwhub.com/sign_in?code={auth_code}"
-            log(f"账号 {account_index} - 正在使用 authCode 登录...")
-            driver.get(login_url)
-            
-            # 等待登录成功 (通过检测URL或页面元素)
-            try:
-                # 等待页面加载且没有 error 提示
-                WebDriverWait(driver, 20).until(
-                    lambda d: "oshwhub.com" in d.current_url and "code=" not in d.current_url
-                )
-                log(f"账号 {account_index} - ✅ 登录跳转成功")
-            except Exception:
-                log(f"账号 {account_index} - ⚠ 登录跳转超时或未检测到预期URL，尝试继续后续流程...")
-
-            result['login_success'] = True  # 标记基本登录成功，后续失败计入非登录异常
-
-        # 3. 获取用户昵称
-        time.sleep(2) # 稍作等待确保 Cookie 生效
-        nickname = get_user_nickname_from_api(driver, account_index)
-        if nickname:
-            result['nickname'] = nickname
-        else:
-            result['nickname'] = '未知'
-
-        # 4. 获取签到前积分数量
-        global skip_oshwhub_signin
-        if skip_oshwhub_signin:
-            log(f"账号 {account_index} - ⚠ 由于前面账号连续失败，跳过开源平台签到流程")
-            result['oshwhub_status'] = '连续异常,跳过签到'
-            result['oshwhub_success'] = False
-        else:
-            initial_points = get_oshwhub_points(driver, account_index)
-            result['initial_points'] = initial_points if initial_points is not None else 0
-            log(f"账号 {account_index} - 签到前积分💰: {result['initial_points']}")
-
-            # 5. 开源平台签到
-            log(f"账号 {account_index} - 正在签到中...")
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-            try:
-                # 确保在签到页
-                if "sign_in" not in driver.current_url:
-                    driver.get("https://oshwhub.com/sign_in")
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                
-                time.sleep(2)
-            except:
-                pass
-                
-            time.sleep(4)
-            
-            # 执行开源平台签到
-            try:
-                # 先检查是否已经签到
-                try:
-                    signed_element = driver.find_element(By.XPATH, '//span[contains(text(),"已签到")]')
-                    log(f"账号 {account_index} - ✅ 今天已经在开源平台签到过了！")
-                    result['oshwhub_status'] = '已签到过'
-                    result['oshwhub_success'] = True
-                    
-                    # 即使已签到，也尝试点击礼包按钮
-                    result['reward_results'] = click_gift_buttons(driver, account_index)
-                    
-                except:
-                    # 如果没有找到"已签到"元素，则尝试点击"立即签到"按钮，并验证是否变为"已签到"
-                    signed = False
-                    max_attempts = 5
-                    for attempt in range(max_attempts):
-                        try:
-                            sign_btn = wait.until(
-                                EC.element_to_be_clickable((By.XPATH, '//span[contains(text(),"立即签到")]'))
-                            )
-                            sign_btn.click()
-                            time.sleep(2)  # 等待页面更新
-                            driver.refresh()  # 刷新页面以确保状态更新
-                            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                            time.sleep(2)  # 额外等待
-
-                            # 检查是否变为"已签到"
-                            signed_element = driver.find_element(By.XPATH, '//span[contains(text(),"已签到")]')
-                            signed = True
-                            break  # 成功，退出循环
-                        except:
-                            pass  # 静默继续下一次尝试
-
-                    if signed:
-                        log(f"账号 {account_index} - ✅ 开源平台签到成功！")
-                        result['oshwhub_status'] = '签到成功'
-                        result['oshwhub_success'] = True
-                        
-                        # 等待签到完成
-                        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                        
-                        # 6. 签到完成后点击7天好礼和月度好礼
-                        result['reward_results'] = click_gift_buttons(driver, account_index)
-                    else:
-                        log(f"账号 {account_index} - ❌ 开源平台签到失败")
-                        result['oshwhub_status'] = '签到失败'
-                        
-            except Exception as e:
-                log(f"账号 {account_index} - ❌ 开源平台签到异常: {e}")
-                result['oshwhub_status'] = '签到异常'
-
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-            # 7. 获取签到后积分数量
-            final_points = get_oshwhub_points(driver, account_index)
-            result['final_points'] = final_points if final_points is not None else 0
-            log(f"账号 {account_index} - 签到后积分💰: {result['final_points']}")
-
-            # 8. 计算积分差值
-            result['points_reward'] = result['final_points'] - result['initial_points']
-            if result['points_reward'] > 0:
-                log(f"账号 {account_index} - 🎉 总积分增加: {result['initial_points']} → {result['final_points']} (+{result['points_reward']})")
-            elif result['points_reward'] == 0:
-                log(f"账号 {account_index} - ⚠ 总积分无变化，可能今天已签到过: {result['initial_points']} → {result['final_points']} (0)")
-            else:
-                log(f"账号 {account_index} - ❗ 积分减少: {result['initial_points']} → {result['final_points']} ({result['points_reward']})")
-
-        # 9. 金豆签到流程
+        # 2. 金豆签到流程（使用获取到的 authCode）
         global skip_jindou_signin
         if skip_jindou_signin:
             log(f"账号 {account_index} - ⚠ 由于前面账号连续失败，跳过金豆签到流程")
@@ -968,116 +673,85 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
             driver.get("https://m.jlc.com/")
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
-            # 重新获取 AuthCode，使用之前验证成功的密码
-            log(f"账号 {account_index} - 正在重新调用 登录依赖 获取 m.jlc.com 登录凭证...")
+            # 使用已获取的 authCode 进行 JLC 登录
+            log(f"账号 {account_index} - 正在使用 authCode 登录 m.jlc.com...")
             
-            auth_result_jlc = None
-            auth_code_jlc = None
-            max_auth_retries = 18
+            # 使用 JS 进行登录
+            login_js = """
+            var code = arguments[0];
+            var callback = arguments[1];
+            var formData = new FormData();
+            formData.append('code', code);
             
-            for auth_attempt in range(max_auth_retries):
-                # 这里已经通过了密码验证，所以只重试网络/API错误
-                auth_result_jlc = get_ali_auth_code(username, result['actual_password'], account_index)
-                
-                if auth_result_jlc is None:
-                    pass 
-                elif isinstance(auth_result_jlc, str) and len(auth_result_jlc) > 100:
-                    pass # 未获取到有效code
-                else:
-                    auth_code_jlc = auth_result_jlc
-                    break
-                
-                if auth_attempt < max_auth_retries - 1:
-                    log(f"账号 {account_index} - ⚠ JLC登录凭证获取失败，等待5秒后第 {auth_attempt + 2} 次重试...")
-                    time.sleep(5)
-            
-            if auth_code_jlc is None:
-                 log(f"账号 {account_index} - ❌ 连续 {max_auth_retries} 次无法获取 m.jlc.com 登录凭证")
-                 if isinstance(auth_result_jlc, str):
-                     log("❌ 登录脚本输出如下：")
-                     log(auth_result_jlc)
-                 result['jindou_status'] = 'authCode获取异常'
-                 result['critical_error'] = True # 标记严重错误
-            else:
-                auth_code_jlc = auth_result_jlc
-                log(f"账号 {account_index} - ✅ 成功获取 m.jlc.com 登录 authCode")
-                
-                # 使用 JS 进行登录
-                login_js = """
-                var code = arguments[0];
-                var callback = arguments[1];
-                var formData = new FormData();
-                formData.append('code', code);
-                
-                fetch('/api/login/login-by-code', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-JLC-AccessToken': 'NONE'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.code === 200 && data.data && data.data.accessToken) {
-                        window.localStorage.setItem('X-JLC-AccessToken', data.data.accessToken);
-                        callback(true);
-                    } else {
-                        console.error('Login failed:', data);
-                        callback(false);
-                    }
-                })
-                .catch(err => {
-                    console.error('Login error:', err);
+            fetch('/api/login/login-by-code', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-JLC-AccessToken': 'NONE'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.code === 200 && data.data && data.data.accessToken) {
+                    window.localStorage.setItem('X-JLC-AccessToken', data.data.accessToken);
+                    callback(true);
+                } else {
+                    console.error('Login failed:', data);
                     callback(false);
-                });
-                """
+                }
+            })
+            .catch(err => {
+                console.error('Login error:', err);
+                callback(false);
+            });
+            """
+            
+            try:
+                login_success = driver.execute_async_script(login_js, auth_code)
+            except Exception as e:
+                log(f"账号 {account_index} - ❌ 执行 JS 登录脚本出错: {e}")
+                login_success = False
+            
+            if login_success:
+                result['jlc_login_success'] = True  # 标记金豆签到的JLC登录成功
+                log(f"账号 {account_index} - ✅ m.jlc.com 登录接口调用成功")
                 
-                try:
-                    login_success = driver.execute_async_script(login_js, auth_code_jlc)
-                except Exception as e:
-                    log(f"账号 {account_index} - ❌ 执行 JS 登录脚本出错: {e}")
-                    login_success = False
+                navigate_and_interact_m_jlc(driver, account_index)
                 
-                if login_success:
-                    result['jlc_login_success'] = True  # 标记金豆签到的JLC登录成功
-                    log(f"账号 {account_index} - ✅ m.jlc.com 登录接口调用成功")
+                access_token = extract_token_from_local_storage(driver)
+                secretkey = extract_secretkey_from_devtools(driver)
+                
+                result['token_extracted'] = bool(access_token)
+                result['secretkey_extracted'] = bool(secretkey)
+                
+                if access_token and secretkey:
+                    log(f"账号 {account_index} - ✅ 成功提取 token 和 secretkey")
                     
-                    navigate_and_interact_m_jlc(driver, account_index)
+                    jlc_client = JLCClient(access_token, secretkey, account_index, driver)
+                    jindou_success = jlc_client.execute_full_process()
                     
-                    access_token = extract_token_from_local_storage(driver)
-                    secretkey = extract_secretkey_from_devtools(driver)
+                    # 记录金豆签到结果
+                    result['jindou_success'] = jindou_success
+                    result['jindou_status'] = jlc_client.sign_status
+                    result['initial_jindou'] = jlc_client.initial_jindou
+                    result['final_jindou'] = jlc_client.final_jindou
+                    result['jindou_reward'] = jlc_client.jindou_reward
+                    result['has_jindou_reward'] = jlc_client.has_reward
                     
-                    result['token_extracted'] = bool(access_token)
-                    result['secretkey_extracted'] = bool(secretkey)
-                    
-                    if access_token and secretkey:
-                        log(f"账号 {account_index} - ✅ 成功提取 token 和 secretkey")
-                        
-                        jlc_client = JLCClient(access_token, secretkey, account_index, driver)
-                        jindou_success = jlc_client.execute_full_process()
-                        
-                        # 记录金豆签到结果
-                        result['jindou_success'] = jindou_success
-                        result['jindou_status'] = jlc_client.sign_status
-                        result['initial_jindou'] = jlc_client.initial_jindou
-                        result['final_jindou'] = jlc_client.final_jindou
-                        result['jindou_reward'] = jlc_client.jindou_reward
-                        result['has_jindou_reward'] = jlc_client.has_reward
-                        
-                        if jindou_success:
-                            log(f"账号 {account_index} - ✅ 金豆签到流程完成")
-                        else:
-                            log(f"账号 {account_index} - ❌ 金豆签到流程失败")
+                    if jindou_success:
+                        log(f"账号 {account_index} - ✅ 金豆签到流程完成")
                     else:
-                        log(f"账号 {account_index} - ❌ 无法提取到 token 或 secretkey，跳过金豆签到")
-                        result['jindou_status'] = 'Token提取失败'
+                        log(f"账号 {account_index} - ❌ 金豆签到流程失败")
                 else:
-                    log(f"账号 {account_index} - ❌ m.jlc.com 登录接口返回失败")
-                    result['jindou_status'] = '登录失败'
+                    log(f"账号 {account_index} - ❌ 无法提取到 token 或 secretkey，跳过金豆签到")
+                    result['jindou_status'] = 'Token提取失败'
+            else:
+                log(f"账号 {account_index} - ❌ m.jlc.com 登录接口返回失败")
+                result['jindou_status'] = '登录失败'
 
     except Exception as e:
         log(f"账号 {account_index} - ❌ 程序执行错误: {e}")
-        result['oshwhub_status'] = '执行异常'
+        result['jindou_status'] = '执行异常'
     finally:
         # 安全退出 Driver
         if driver:
@@ -1097,11 +771,10 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     return result
 
 def should_retry(merged_success, password_error):
-    """判断是否需要重试：如果开源平台或金豆签到未成功，且不是密码错误"""
-    global skip_oshwhub_signin, skip_jindou_signin
-    oshwhub_needs_retry = not merged_success['oshwhub'] and not skip_oshwhub_signin
+    """判断是否需要重试：如果金豆签到未成功，且不是密码错误"""
+    global skip_jindou_signin
     jindou_needs_retry = not merged_success['jindou'] and not skip_jindou_signin
-    need_retry = (oshwhub_needs_retry or jindou_needs_retry) and not password_error
+    need_retry = jindou_needs_retry and not password_error
     return need_retry
 
 def process_single_account(username, password, account_index, total_accounts):
@@ -1109,13 +782,6 @@ def process_single_account(username, password, account_index, total_accounts):
     max_retries = 3  # 最多重试3次
     merged_result = {
         'account_index': account_index,
-        'nickname': '未知',
-        'oshwhub_status': '未知',
-        'oshwhub_success': False,
-        'initial_points': 0,
-        'final_points': 0,
-        'points_reward': 0,
-        'reward_results': [],
         'jindou_status': '未知',
         'jindou_success': False,
         'initial_jindou': 0,
@@ -1129,11 +795,10 @@ def process_single_account(username, password, account_index, total_accounts):
         'actual_password': None,  # 实际使用的密码
         'backup_index': -1,  # 使用的备用密码索引，-1表示原密码
         'critical_error': False,   # 标记严重错误
-        'login_success': False,
         'jlc_login_success': False
     }
     
-    merged_success = {'oshwhub': False, 'jindou': False}
+    merged_success = {'jindou': False}
 
     for attempt in range(max_retries + 1):  # 第一次执行 + 重试次数
         try:
@@ -1141,41 +806,24 @@ def process_single_account(username, password, account_index, total_accounts):
         except Exception as e:
             log(f"账号 {account_index} - ⚠ 发生未捕获异常，将进行重试: {e}")
             result = merged_result.copy()
-            result['oshwhub_status'] = '程序异常'
+            result['jindou_status'] = '程序异常'
         
         # 如果检测到密码错误，立即停止重试
         if result.get('password_error'):
             merged_result['password_error'] = True
-            merged_result['oshwhub_status'] = '密码错误'
-            merged_result['nickname'] = '未知'
+            merged_result['jindou_status'] = '密码错误'
             # 停止后续尝试
             break
         
         # 如果检测到严重错误（如多次调用登录依赖失败），立即停止重试，处理下一个账号
         if result.get('critical_error'):
             merged_result['critical_error'] = True
-            merged_result['oshwhub_status'] = result.get('oshwhub_status', '严重错误')
-            if result.get('jindou_status') != '未知':
-                 merged_result['jindou_status'] = result.get('jindou_status')
+            merged_result['jindou_status'] = result.get('jindou_status', '严重错误')
             break
 
         # 合并结果
-        if result.get('login_success'):
-            merged_result['login_success'] = True
         if result.get('jlc_login_success'):
             merged_result['jlc_login_success'] = True
-        
-        # 合并开源平台结果：如果本次成功且之前未成功，则更新
-        if result['oshwhub_success'] and not merged_success['oshwhub']:
-            merged_success['oshwhub'] = True
-            merged_result['oshwhub_status'] = result['oshwhub_status']
-            merged_result['initial_points'] = result['initial_points']
-            merged_result['final_points'] = result['final_points']
-            merged_result['points_reward'] = result['points_reward']
-            merged_result['reward_results'] = result['reward_results']  # 合并礼包结果
-            # 更新实际密码信息
-            merged_result['actual_password'] = result['actual_password']
-            merged_result['backup_index'] = result['backup_index']
         
         # 合并金豆结果：如果本次成功且之前未成功，则更新
         if result['jindou_success'] and not merged_success['jindou']:
@@ -1185,15 +833,12 @@ def process_single_account(username, password, account_index, total_accounts):
             merged_result['final_jindou'] = result['final_jindou']
             merged_result['jindou_reward'] = result['jindou_reward']
             merged_result['has_jindou_reward'] = result['has_jindou_reward']
-            # 更新实际密码信息（如果之前未更新）
+            # 更新实际密码信息
             if merged_result['actual_password'] is None:
                 merged_result['actual_password'] = result['actual_password']
                 merged_result['backup_index'] = result['backup_index']
         
         # 更新其他字段（如果之前未知）
-        if merged_result['nickname'] == '未知' and result['nickname'] != '未知':
-            merged_result['nickname'] = result['nickname']
-        
         if not merged_result['token_extracted'] and result['token_extracted']:
             merged_result['token_extracted'] = result['token_extracted']
         
@@ -1211,22 +856,10 @@ def process_single_account(username, password, account_index, total_accounts):
             time.sleep(random.randint(2, 6))
     
     # 最终设置success字段基于合并
-    merged_result['oshwhub_success'] = merged_success['oshwhub']
     merged_result['jindou_success'] = merged_success['jindou']
 
     # ---------------- 连续失败跳过逻辑 ----------------
-    global consecutive_oshwhub_fails, skip_oshwhub_signin
     global consecutive_jindou_fails, skip_jindou_signin
-
-    # 检查开源平台签到连续失败 (确保已经通过了开源平台登录)
-    if not skip_oshwhub_signin and merged_result['login_success']:
-        if not merged_result['oshwhub_success']:
-            consecutive_oshwhub_fails += 1
-            if consecutive_oshwhub_fails >= 3:
-                skip_oshwhub_signin = True
-                log("⚠ 连续3个账号开源平台签到失败，接下来的账号跳过开源平台签到流程！")
-        else:
-            consecutive_oshwhub_fails = 0
 
     # 检查金豆签到连续失败 (确保已经通过了金豆平台的JLC登录)
     if not skip_jindou_signin and merged_result['jlc_login_success']:
@@ -1458,9 +1091,7 @@ def main():
     log("📊 详细签到任务完成总结")
     log("=" * 70)
     
-    oshwhub_success_count = 0
     jindou_success_count = 0
-    total_points_reward = 0
     total_jindou_reward = 0
     retried_accounts = []  # 合并所有重试过的账号
     password_error_accounts = []  # 密码错误的账号
@@ -1470,7 +1101,6 @@ def main():
     
     for result in all_results:
         account_index = result['account_index']
-        nickname = result.get('nickname', '未知')
         retry_count = result.get('retry_count', 0)
         password_error = result.get('password_error', False)
         
@@ -1481,7 +1111,7 @@ def main():
             retried_accounts.append(account_index)
         
         # 检查是否有失败情况（排除密码错误）
-        if (not result['oshwhub_success'] or not result['jindou_success']) and not password_error:
+        if not result['jindou_success'] and not password_error:
             failed_accounts.append(account_index)
         
         retry_label = ""
@@ -1490,21 +1120,10 @@ def main():
         
         # 密码错误账号的特殊显示
         if password_error:
-            log(f"账号 {account_index} (未知) 详细结果: [密码错误]")
+            log(f"账号 {account_index} 详细结果: [密码错误]")
             log("  └── 状态: ❌ 账号或密码错误，跳过此账号")
         else:
-            log(f"账号 {account_index} ({nickname}) 详细结果:{retry_label}")
-            log(f"  ├── 开源平台: {result['oshwhub_status']}")
-            
-            # 显示积分变化
-            if result['points_reward'] > 0:
-                log(f"  ├── 积分变化: {result['initial_points']} → {result['final_points']} (+{result['points_reward']})")
-                total_points_reward += result['points_reward']
-            elif result['points_reward'] == 0 and result['initial_points'] > 0:
-                log(f"  ├── 积分变化: {result['initial_points']} → {result['final_points']} (0)")
-            else:
-                log(f"  ├── 积分状态: 无法获取积分信息")
-            
+            log(f"账号 {account_index} 详细结果:{retry_label}")
             log(f"  ├── 金豆签到: {result['jindou_status']}")
             
             # 显示金豆变化
@@ -1528,12 +1147,6 @@ def main():
                 predicted_beans = calculate_year_end_prediction(current_jindou)
                 log(f"  ├── 预计年底: ≈{predicted_beans} 金豆 (按周均22个预测)")
             
-            # 显示礼包领取结果
-            for reward_result in result['reward_results']:
-                log(f"  ├── {reward_result}")
-            
-            if result['oshwhub_success']:
-                oshwhub_success_count += 1
             if result['jindou_success']:
                 jindou_success_count += 1
         
@@ -1546,28 +1159,18 @@ def main():
     else:
         log("📈 嘉立创签到总体统计:")
     log(f"  ├── 总账号数: {total_accounts}")
-    log(f"  ├── 开源平台签到成功: {oshwhub_success_count}/{total_accounts}")
     log(f"  ├── 金豆签到成功: {jindou_success_count}/{total_accounts}")
-    
-    if total_points_reward > 0:
-        log(f"  ├── 总计获得积分: +{total_points_reward}")
     
     if total_jindou_reward > 0:
         log(f"  ├── 总计获得金豆: +{total_jindou_reward}")
     
     # 计算成功率
-    oshwhub_rate = (oshwhub_success_count / total_accounts) * 100 if total_accounts > 0 else 0
     jindou_rate = (jindou_success_count / total_accounts) * 100 if total_accounts > 0 else 0
     
-    log(f"  ├── 开源平台成功率: {oshwhub_rate:.1f}%")
     log(f"  └── 金豆签到成功率: {jindou_rate:.1f}%")
     
     # 失败账号列表（排除密码错误）
-    failed_oshwhub = [r['account_index'] for r in all_results if not r['oshwhub_success'] and not r.get('password_error', False)]
     failed_jindou = [r['account_index'] for r in all_results if not r['jindou_success'] and not r.get('password_error', False)]
-    
-    if failed_oshwhub:
-        log(f"  ⚠ 开源平台失败账号: {', '.join(map(str, failed_oshwhub))}")
     
     if failed_jindou:
         log(f"  ⚠ 金豆签到失败账号: {', '.join(map(str, failed_jindou))}")
@@ -1575,9 +1178,9 @@ def main():
     if password_error_accounts:
         log(f"  ⚠密码错误的账号: {', '.join(map(str, password_error_accounts))}")
        
-    if not failed_oshwhub and not failed_jindou and not password_error_accounts:
+    if not failed_jindou and not password_error_accounts:
         log("  🎉 所有账号全部签到成功!")
-    elif password_error_accounts and not failed_oshwhub and not failed_jindou:
+    elif password_error_accounts and not failed_jindou:
         log("  ⚠除了密码错误账号，其他账号全部签到成功!")
     
     log("=" * 70)
@@ -1594,7 +1197,7 @@ def main():
             for result in changed_accounts:
                 username = usernames[result['account_index'] - 1]
                 f.write(f"{username}:{result['actual_password']}\n")
-                f.write(f"# 昵称: {result['nickname']}\n\n")
+            f.write("\n")
         log("✅ 已生成 password-changed.txt 文件")
     else:
         log("✅ 没有使用非原密码的账号，无需生成 password-changed.txt")
