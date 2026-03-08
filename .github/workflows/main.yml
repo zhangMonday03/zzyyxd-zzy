@@ -250,3 +250,10 @@ jobs:
           if-no-files-found: ignore
           archive: false
           retention-days: 7
+
+      - name: '清理 GitHub 界面的临时 JSON Artifacts'
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            jlc_result_*
+          useGlob: true
