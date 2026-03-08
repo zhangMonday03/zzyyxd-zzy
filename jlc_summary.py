@@ -78,10 +78,50 @@ def collect_all_results():
         all_accounts.extend(accounts)
         log(f"从 {filepath} 解析了 {len(accounts)} 个账号")
     
-    # 按金豆数量排序（由高到低）
-    all_accounts.sort(key=lambda x: x.get('final_jindou', 0), reverse=True)
+    # 计算每个账号的显示金豆（取 initial_jindou 和 final_jindou 的最大值，防止失败时为0）
+    for acc in all_accounts:
+        acc['display_jindou'] = max(acc.get('final_jindou', 0), acc.get('initial_jindou', 0))
+    
+    # 按显示金豆数量排序（由高到低）
+    all_accounts.sort(key=lambda x: x.get('display_jindou', 0), reverse=True)
     
     return True
+
+def calculate_year_end_prediction(current_beans):
+    """计算年底金豆预测数量"""
+    try:
+        now = datetime.now()
+        year_end = datetime(now.year, 12, 31)
+        remaining_days = (year_end - now).days
+        if remaining_days < 0:
+            remaining_days = 0
+        # 按照一周大约22个金豆计算，每天平均约 22/7 个
+        estimated_future_beans = int(remaining_days * (22 / 7))
+        return current_beans + estimated_future_beans
+    except Exception:
+        return current_beans
+
+def get_display_status(acc):
+    """获取签到状态的显示文本"""
+    if acc.get('password_error', False):
+        return '密码错误'
+    
+    jindou_status = acc.get('jindou_status', '未知')
+    jindou_success = acc.get('jindou_success', False)
+    
+    if jindou_success:
+        # 成功的状态统一显示
+        if jindou_status == '已签到过':
+            return '已签到过'
+        elif jindou_status == '领取奖励成功':
+            return '签到成功(有奖励)'
+        elif jindou_status == '签到成功':
+            return '签到成功'
+        else:
+            return '签到成功'
+    else:
+        # 失败的状态直接显示原因
+        return jindou_status
 
 def generate_excel():
     """生成Excel排名文件"""
@@ -96,8 +136,8 @@ def generate_excel():
     ws = wb.active
     ws.title = "金豆排名"
     
-    # 设置标题行
-    headers = ['排名', '金豆数量', '客编', '密码', '归属账号组']
+    # 设置标题行（新增：签到状态、年底预计）
+    headers = ['排名', '金豆数量', '客编', '密码', '归属账号组', '签到状态', '年底预计']
     ws.append(headers)
     
     # 设置标题行样式
@@ -111,27 +151,50 @@ def generate_excel():
         cell.font = header_font
         cell.alignment = header_alignment
     
+    # 定义签到状态的颜色样式
+    status_styles = {
+        'success': Font(color="00FF00", bold=True),      # 绿色 - 成功
+        'already': Font(color="00FF00", bold=True),       # 绿色 - 已签到过
+        'fail': Font(color="C00000", bold=True),          # 深红色 - 失败
+        'password': Font(color="FF6600", bold=True),      # 橙色 - 密码错误
+    }
+    
+    total_cols = len(headers)  # 7列
+    
     # 填充数据
     for rank, acc in enumerate(all_accounts, 1):
         username = acc.get('username', '')
-        final_jindou = acc.get('final_jindou', 0)
+        display_jindou = acc.get('display_jindou', max(acc.get('final_jindou', 0), acc.get('initial_jindou', 0)))
         actual_password = acc.get('actual_password', '')
         group_index = acc.get('group_index', 0)
+        jindou_success = acc.get('jindou_success', False)
+        password_error = acc.get('password_error', False)
         
         display_password = actual_password if actual_password else ''
         
+        # 签到状态
+        display_status = get_display_status(acc)
+        
+        # 年底预计
+        if display_jindou > 0:
+            year_end_prediction = calculate_year_end_prediction(display_jindou)
+        else:
+            year_end_prediction = ''
+        
         row_data = [
             rank,
-            final_jindou,
+            display_jindou,
             username,
             display_password,
-            f"{group_index}组账号{acc.get('account_index', 0)}"
+            f"{group_index}组账号{acc.get('account_index', 0)}",
+            display_status,
+            year_end_prediction
         ]
         ws.append(row_data)
         
         # 设置数据行样式
         row_num = rank + 1
-        for col_num in range(1, 6):
+        for col_num in range(1, total_cols + 1):
             cell = ws.cell(row=row_num, column=col_num)
             cell.alignment = Alignment(horizontal="center", vertical="center")
             
@@ -141,15 +204,36 @@ def generate_excel():
             
             # 金豆数量列使用不同颜色区分（字体颜色）
             if col_num == 2:
-                if final_jindou >= 500:
+                if display_jindou >= 500:
                     cell.font = Font(color="C00000", bold=True)  # 深红色
-                elif final_jindou >= 300:
+                elif display_jindou >= 300:
                     cell.font = Font(color="FF6600", bold=True)  # 橙色
-                elif final_jindou >= 100:
+                elif display_jindou >= 100:
+                    cell.font = Font(color="0070C0", bold=True)  # 蓝色
+            
+            # 签到状态列样式
+            if col_num == 6:
+                if password_error:
+                    cell.font = status_styles['password']
+                elif jindou_success:
+                    if display_status == '已签到过':
+                        cell.font = status_styles['already']
+                    else:
+                        cell.font = status_styles['success']
+                else:
+                    cell.font = status_styles['fail']
+            
+            # 年底预计列样式
+            if col_num == 7 and isinstance(year_end_prediction, int):
+                if year_end_prediction >= 1500:
+                    cell.font = Font(color="C00000", bold=True)  # 深红色
+                elif year_end_prediction >= 1000:
+                    cell.font = Font(color="FF6600", bold=True)  # 橙色
+                elif year_end_prediction >= 500:
                     cell.font = Font(color="0070C0", bold=True)  # 蓝色
     
     # 设置列宽
-    column_widths = [8, 12, 18, 15, 18]
+    column_widths = [8, 12, 18, 15, 18, 18, 12]
     for i, width in enumerate(column_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = width
     
@@ -161,7 +245,7 @@ def generate_excel():
         bottom=Side(style='thin')
     )
     
-    for row in ws.iter_rows(min_row=1, max_row=len(all_accounts)+1, min_col=1, max_col=5):
+    for row in ws.iter_rows(min_row=1, max_row=len(all_accounts)+1, min_col=1, max_col=total_cols):
         for cell in row:
             cell.border = thin_border
     
