@@ -166,7 +166,7 @@ def generate_excel():
             cell.border = thin_border
     
     # 冻结首行
-    #ws.freeze_panes = 'A2'
+    ws.freeze_panes = 'A2'
     
     # 保存文件
     wb.save(filename)
