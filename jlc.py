@@ -344,6 +344,9 @@ class JLCClient:
             self.initial_jindou = 0
         log(f"账号 {self.account_index} - 签到前金豆💰: {self.initial_jindou}")
         
+        # 将 final_jindou 先设为 initial_jindou，防止中途失败时 final_jindou 为 0
+        self.final_jindou = self.initial_jindou
+        
         time.sleep(random.randint(1, 2))
         
         # 3. 检查签到状态
@@ -362,9 +365,10 @@ class JLCClient:
         time.sleep(random.randint(1, 2))
         
         # 5. 获取签到后金豆数量
-        self.final_jindou = self.get_points()
-        if self.final_jindou is None:
-            self.final_jindou = 0
+        final = self.get_points()
+        if final is not None and final > 0:
+            self.final_jindou = final
+        # 如果获取失败，final_jindou 保持为 initial_jindou，不会变成 0
         log(f"账号 {self.account_index} - 签到后金豆💰: {self.final_jindou}")
         
         # 6. 计算金豆差值
@@ -837,6 +841,16 @@ def process_single_account(username, password, account_index, total_accounts):
             if merged_result['actual_password'] is None:
                 merged_result['actual_password'] = result['actual_password']
                 merged_result['backup_index'] = result['backup_index']
+        
+        # 即使签到失败，也保留已获取到的金豆数据（用于Excel显示）
+        if not merged_success['jindou']:
+            # 取最大的金豆值（优先保留有数据的结果）
+            if result['initial_jindou'] > merged_result['initial_jindou']:
+                merged_result['initial_jindou'] = result['initial_jindou']
+            if result['final_jindou'] > merged_result['final_jindou']:
+                merged_result['final_jindou'] = result['final_jindou']
+            # 更新状态为最后一次尝试的状态
+            merged_result['jindou_status'] = result['jindou_status']
         
         # 更新其他字段（如果之前未知）
         if not merged_result['token_extracted'] and result['token_extracted']:
