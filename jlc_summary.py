@@ -136,7 +136,7 @@ def generate_excel():
     ws = wb.active
     ws.title = "金豆排名"
     
-    # 设置标题行（新增：签到状态、年底预计）
+    # 设置标题行
     headers = ['排名', '金豆数量', '客编', '密码', '归属账号组', '签到状态', '年底预计']
     ws.append(headers)
     
@@ -229,7 +229,7 @@ def generate_excel():
                     cell.font = Font(color="C00000", bold=True)  # 深红色
                 elif year_end_prediction >= 1000:
                     cell.font = Font(color="FF6600", bold=True)  # 橙色
-                elif year_end_prediction >= 500:
+                elif year_end_prediction >= 800:
                     cell.font = Font(color="0070C0", bold=True)  # 蓝色
     
     # 设置列宽
