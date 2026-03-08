@@ -265,7 +265,7 @@ class JLCClient:
         else:
             error_msg = data.get('message', '未知错误') if data else '请求失败'
             log(f"账号 {self.account_index} - ❌ 检查签到状态失败: {error_msg}")
-            self.sign_status = "检查失败"
+            self.sign_status = "检查签到状态失败"
             return None
     
     def sign_in(self):
