@@ -451,7 +451,7 @@ def generate_excel():
     
     # 保存文件
     wb.save(filename)
-    log(f"Excel文件已生成: {filename} (包含按组排名Sheet)")
+    log(f"Excel文件已生成: {filename}")
     
     return filename
 
