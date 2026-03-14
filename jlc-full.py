@@ -714,15 +714,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     
     backup_passwords = [
         "Aa123123",
-        "Zz123123",
-        "Qq123123",
-        "Ss123123",
-        "Xx123123",
-        "Yuanxd20031024",
-        "jjl1775774A",
-        "qeowowe5472",
-        "Wyf349817236",
-        "Bb123123"
+        "134613461346zzY"
     ]
 
     try:
