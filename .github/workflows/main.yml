@@ -260,7 +260,7 @@ jobs:
           retention-days: 5
 
       - name: '清理 GitHub 界面的临时 JSON Artifacts'
-        uses: geekyeggo/delete-artifact@v5
+        uses: geekyeggo/delete-artifact@v6
         with:
           name: |
             jlc_result_*
