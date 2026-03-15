@@ -458,7 +458,7 @@ def generate_excel():
 def get_push_title():
     """获取推送标题"""
     now = datetime.now()
-    return f"{now.month}月{now.day}日立创金豆签到结果"
+    return f"{now.month}月{now.day}日ZZY立创金豆签到结果"
 
 def get_push_content():
     """获取推送内容"""
@@ -470,7 +470,7 @@ def get_push_content():
     pwd_error_count = len(summary_info['password_error_accounts'])
     
     if failed_count == 0 and pwd_error_count == 0:
-        return f"{month}月{day}日立创金豆签到已全部成功"
+        return f"{month}月{day}日ZZY立创金豆签到已全部成功"
     else:
         content_parts = []
         
@@ -497,7 +497,7 @@ def get_push_content():
             for group, indices in pwd_by_group.items():
                 content_parts.append(f"{group}组账号{','.join(indices)}(密码错误)")
         
-        return f"{month}月{day}日立创金豆签到有{'/'.join(content_parts)}失败"
+        return f"{month}月{day}日ZZY立创金豆签到有{'/'.join(content_parts)}失败"
 
 def get_workflow_url():
     """获取GitHub Actions工作流运行页面链接"""
