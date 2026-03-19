@@ -59,6 +59,9 @@ skip_oshwhub_signin = False
 consecutive_jindou_fails = 0
 skip_jindou_signin = False
 
+consecutive_proxy_fails = 0
+disable_global_proxy = False
+
 def log(msg):
     full_msg = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
     print(full_msg, flush=True)
@@ -215,10 +218,73 @@ def get_oshwhub_points(driver, account_index):
     log(f"账号 {account_index} - ⚠ 无法获取积分信息")
     return 0
 
+def check_proxy(proxies):
+    try:
+        res = requests.get("https://m.jlc.com", proxies=proxies, timeout=5)
+        return res.status_code == 200
+    except:
+        return False
+
+def get_valid_proxy(account_index):
+    proxy_api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=7db2f497&pwd=2051b6d39963f332116779a42367a8ef&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
+    max_attempts = 3
+    attempt = 0
+    
+    while attempt < max_attempts:
+        try:
+            log(f"账号 {account_index} - 正在获取代理IP (尝试 {attempt + 1}/{max_attempts})...")
+            response = requests.get(proxy_api_url, timeout=10)
+            
+            try:
+                data = response.json()
+            except Exception:
+                log(f"账号 {account_index} - ⚠ 代理API返回非JSON数据，接口返回: {response.text}")
+                attempt += 1
+                time.sleep(2)
+                continue
+
+            if data.get("code") == 605:
+                log(f"账号 {account_index} - 代理IP已自动添加到白名单，等待15秒后重试...")
+                time.sleep(15)
+                continue 
+            elif data.get("code") == 1 and "Too Many Requests" in data.get("msg", ""):
+                log(f"账号 {account_index} - 代理API请求过快，等待5秒后重试...")
+                time.sleep(5)
+                continue
+            elif data.get("code") == 0 and data.get("data"):
+                proxy_info = data["data"][0]
+                ip = proxy_info.get("ip")
+                port = proxy_info.get("port")
+                city = proxy_info.get("city", "未知地区")
+                if ip and port:
+                    proxy_url = f"http://{ip}:{port}"
+                    proxies = {
+                        "http": proxy_url,
+                        "https": proxy_url
+                    }
+                    if check_proxy(proxies):
+                        log(f"账号 {account_index} - ✅ 代理获取并验证成功: {ip}:{port} [{city}]")
+                        return proxies
+                    else:
+                        log(f"账号 {account_index} - ⚠ 获取到的代理不可用，准备重新获取...")
+                        attempt += 1
+                        continue
+            
+            log(f"账号 {account_index} - ⚠ 代理获取失败，接口返回: {json.dumps(data, ensure_ascii=False)}")
+            attempt += 1
+            time.sleep(2)
+        except Exception as e:
+            log(f"账号 {account_index} - ❌ 获取代理IP异常: {e}")
+            attempt += 1
+            time.sleep(2)
+    
+    log(f"账号 {account_index} - ❌ 连续3次获取或验证代理失败，放弃使用代理")
+    return None
+
 class JLCClient:
     """调用嘉立创接口"""
     
-    def __init__(self, access_token, secretkey, account_index, driver):
+    def __init__(self, access_token, secretkey, account_index, driver, proxies=None):
         self.base_url = "https://m.jlc.com"
         self.headers = {
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -230,6 +296,7 @@ class JLCClient:
         }
         self.account_index = account_index
         self.driver = driver
+        self.proxies = proxies
         self.message = ""
         self.initial_jindou = 0  # 签到前金豆数量
         self.final_jindou = 0    # 签到后金豆数量
@@ -241,9 +308,9 @@ class JLCClient:
         """发送 API 请求"""
         try:
             if method.upper() == 'GET':
-                response = requests.get(url, headers=self.headers, timeout=10)
+                response = requests.get(url, headers=self.headers, timeout=10, proxies=self.proxies)
             else:
-                response = requests.post(url, headers=self.headers, timeout=10)
+                response = requests.post(url, headers=self.headers, timeout=10, proxies=self.proxies)
             
             if response.status_code == 200:
                 return response.json()
@@ -1045,7 +1112,22 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                     if access_token and secretkey:
                         log(f"账号 {account_index} - ✅ 成功提取 token 和 secretkey")
                         
-                        jlc_client = JLCClient(access_token, secretkey, account_index, driver)
+                        global disable_global_proxy, consecutive_proxy_fails
+                        current_proxies = None
+                        
+                        if not disable_global_proxy:
+                            current_proxies = get_valid_proxy(account_index)
+                            if current_proxies:
+                                consecutive_proxy_fails = 0
+                            else:
+                                consecutive_proxy_fails += 1
+                                if consecutive_proxy_fails >= 5:
+                                    disable_global_proxy = True
+                                    log("⚠ 连续5个账号代理获取失败，接下来的账号全部放弃使用代理！")
+                        else:
+                            log(f"账号 {account_index} - ⚠ 已全局禁用代理，直接使用本地IP")
+
+                        jlc_client = JLCClient(access_token, secretkey, account_index, driver, current_proxies)
                         jindou_success = jlc_client.execute_full_process()
                         
                         # 记录金豆签到结果
