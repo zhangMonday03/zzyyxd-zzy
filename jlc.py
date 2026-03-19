@@ -251,13 +251,16 @@ class JLCClient:
         self.sign_status = "未知"  # 签到状态
         self.has_reward = False  # 是否领取了额外奖励
         
-    def send_request(self, url, method='GET'):
+    def send_request(self, url, method='GET', use_proxy=False):
         """发送 API 请求"""
         try:
+            # 根据 use_proxy 参数决定是否使用代理
+            req_proxies = self.proxies if use_proxy else None
+            
             if method.upper() == 'GET':
-                response = requests.get(url, headers=self.headers, timeout=10, proxies=self.proxies)
+                response = requests.get(url, headers=self.headers, timeout=10, proxies=req_proxies)
             else:
-                response = requests.post(url, headers=self.headers, timeout=10, proxies=self.proxies)
+                response = requests.post(url, headers=self.headers, timeout=10, proxies=req_proxies)
             
             if response.status_code == 200:
                 return response.json()
@@ -337,9 +340,10 @@ class JLCClient:
     
     def sign_in(self):
         """执行签到"""
-        log(f"账号 {self.account_index} - 执行签到...")
+        log(f"账号 {self.account_index} - 执行签到 (使用代理)...")
         url = f"{self.base_url}/api/activity/sign/signIn?source=4"
-        data = self.send_request(url)
+        # ⚠️ 仅在签到接口显式使用代理
+        data = self.send_request(url, use_proxy=True)
         
         if data and data.get('success'):
             gain_num = data.get('data', {}).get('gainNum')
