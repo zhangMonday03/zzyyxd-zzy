@@ -33,6 +33,7 @@ except ImportError:
 # ======================== 全局变量 ========================
 in_summary = False
 summary_logs = []
+consecutive_proxy_failures = 0
 
 def log(msg, show_time=True):
     """带时间戳的日志输出"""
@@ -367,7 +368,7 @@ def extract_secretkey(driver, max_retries=5):
                 pass
     return None
 
-def send_bbs_request(driver, url, method="POST", body=None, secretkey="", max_retries=3):
+def send_bbs_request(driver, url, method="POST", body=None, secretkey="", max_retries=3, proxies=None):
     """通过 requests 发送 BBS API 请求（自动携带 cookie）"""
     for attempt in range(max_retries):
         try:
@@ -381,11 +382,11 @@ def send_bbs_request(driver, url, method="POST", body=None, secretkey="", max_re
             if method.upper() == "POST":
                 headers['Content-Type'] = 'application/json'
                 if body is not None:
-                    resp = requests.post(url, headers=headers, cookies=cookies, json=body, timeout=15)
+                    resp = requests.post(url, headers=headers, cookies=cookies, json=body, timeout=15, proxies=proxies)
                 else:
-                    resp = requests.post(url, headers=headers, cookies=cookies, timeout=15)
+                    resp = requests.post(url, headers=headers, cookies=cookies, timeout=15, proxies=proxies)
             else:
-                resp = requests.get(url, headers=headers, cookies=cookies, timeout=15)
+                resp = requests.get(url, headers=headers, cookies=cookies, timeout=15, proxies=proxies)
 
             if resp.text:
                 try:
@@ -512,7 +513,7 @@ def get_sign_info(driver, secretkey, label="", max_retries=3):
 
     return {"success": False, "error": "请求失败"}
 
-def do_sign_in(driver, secretkey, max_retries=3):
+def do_sign_in(driver, secretkey, max_retries=3, proxies=None):
     """执行签到"""
     for attempt in range(max_retries):
         resp = send_bbs_request(
@@ -522,6 +523,7 @@ def do_sign_in(driver, secretkey, max_retries=3):
             {"signInContent": "", "signInExpression": ""},
             secretkey,
             max_retries=1,
+            proxies=proxies
         )
         if resp:
             if resp.get("success") and resp.get("code") == 200:
@@ -545,50 +547,44 @@ def do_sign_in(driver, secretkey, max_retries=3):
 
 def get_remaining_lottery_times(driver, max_retries=3):
     """从前端页面提取剩余抽奖次数"""
-    cookies = {cookie['name']: cookie['value'] for cookie in driver.get_cookies()}
-    headers = {
-        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    }
-    url = "https://www.jlc-bbs.com/platform/points-paradise?type=index&id=ab69ff00332949328ba578c086d42141"
-    
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, headers=headers, cookies=cookies, timeout=15)
-            page_source = resp.text
-            
+            page_source = driver.page_source
             # 匹配 "今日可抽奖次数：" 后面的数字
             match = re.search(r"今日可抽奖次数：\s*</span>\s*(\d+)\s*次", page_source)
             if match:
                 times = int(match.group(1))
                 log(f"🎰 剩余抽奖次数: {times}")
                 return {"success": True, "times": times}
-                
             # 尝试更宽松的匹配
             match2 = re.search(r"今日可抽奖次数[：:]\s*(\d+)\s*次", page_source)
             if match2:
                 times = int(match2.group(1))
                 log(f"🎰 剩余抽奖次数: {times}")
                 return {"success": True, "times": times}
-                
             # 尝试更宽松的匹配（纯文本）
-            text = re.sub(r'<[^>]+>', '', page_source)
+            text = driver.find_element(By.TAG_NAME, "body").text
             match3 = re.search(r"今日可抽奖次数[：:]\s*(\d+)\s*次", text)
             if match3:
                 times = int(match3.group(1))
                 log(f"🎰 剩余抽奖次数: {times}")
                 return {"success": True, "times": times}
-                
         except Exception as e:
             log(f"⚠ 获取抽奖次数异常: {e}")
 
         if attempt < max_retries - 1:
             log(f"⚠ 未能获取抽奖次数，等待3秒后重试 ({attempt + 1}/{max_retries})...")
             time.sleep(3)
+            try:
+                driver.refresh()
+                time.sleep(5)
+            except Exception:
+                pass
 
     log("⚠ 无法从页面获取剩余抽奖次数")
     return {"success": False, "error": "无法从页面提取抽奖次数"}
 
-def do_lottery(driver, secretkey):
+def do_lottery(driver, secretkey, proxies=None):
     """执行单次抽奖"""
     resp = send_bbs_request(
         driver,
@@ -597,6 +593,7 @@ def do_lottery(driver, secretkey):
         {"luckyDrawActivityAccessId": "ab69ff00332949328ba578c086d42141"},
         secretkey,
         max_retries=2,
+        proxies=proxies
     )
     if resp:
         if resp.get("success") and resp.get("code") == 200:
@@ -634,12 +631,56 @@ def get_koi_cards(driver, secretkey, max_retries=3):
 
     return {"success": False, "error": "请求失败"}
 
+def fetch_proxy_with_retry():
+    """带重试机制获取代理IP"""
+    api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=7db2f497&pwd=2051b6d39963f332116779a42367a8ef&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
+    while True:
+        try:
+            resp = requests.get(api_url, timeout=10)
+            try:
+                data = resp.json()
+            except Exception:
+                log(f"⚠ 调用代理API失败，返回内容非JSON: {resp.text}")
+                return None
+
+            if data.get("code") == 605 and "白名单" in data.get("msg", ""):
+                log(f"⚠ 代理API返回白名单提示: {data.get('msg')}，等待15秒后重试...")
+                time.sleep(15)
+                continue
+            elif data.get("code") == 1 and "Too Many Requests" in data.get("msg", ""):
+                log(f"⚠ 代理API请求过快: {data.get('msg')}，等待5秒后重试...")
+                time.sleep(5)
+                continue
+            elif data.get("success") and data.get("data"):
+                proxy_info = data["data"][0]
+                ip = proxy_info.get("ip")
+                port = proxy_info.get("port")
+                city = proxy_info.get("city", "未知位置")
+                log(f"✅ 成功获取代理IP: {ip}:{port} [{city}]")
+                return {"http": f"http://{ip}:{port}", "https": f"http://{ip}:{port}"}
+            else:
+                log(f"⚠ 调用代理API失败，接口返回: {resp.text}")
+                return None
+        except Exception as e:
+            log(f"⚠ 请求代理API异常: {e}")
+            return None
+
+def validate_proxy(proxies):
+    """验证代理IP是否可用"""
+    try:
+        resp = requests.get("https://www.jlc-bbs.com/", proxies=proxies, timeout=8)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
 # ======================== 单账号处理 ========================
 def process_single_account(username, password, account_index, total_accounts, start_pwd_idx=0):
     """处理单个账号的完整流程，包含密码重试及断点记忆"""
+    global consecutive_proxy_failures
+    
     backup_passwords = [
         "Aa123123",
-        "134613461346zzY"
+        "134613461346Y"
     ]
     
     all_passwords = [password]
@@ -731,6 +772,30 @@ def process_single_account(username, password, account_index, total_accounts, st
                 result["error_msg"] = "BBS会话无效"
                 return result
 
+            # ============ 代理获取阶段 ============
+            account_proxy = None
+            if consecutive_proxy_failures >= 5:
+                log("ℹ 连续5个账号挂载代理失败，此账号及后续账号将直接使用本地IP")
+            else:
+                proxy_attempts = 0
+                while proxy_attempts < 3:
+                    log(f"📡 正在获取代理IP (尝试 {proxy_attempts + 1}/3)...")
+                    temp_proxy = fetch_proxy_with_retry()
+                    if temp_proxy:
+                        log("📡 正在检测代理IP可用性...")
+                        if validate_proxy(temp_proxy):
+                            log("✅ 代理IP可用")
+                            account_proxy = temp_proxy
+                            consecutive_proxy_failures = 0
+                            break
+                        else:
+                            log("⚠ 代理IP不可用，准备重新获取...")
+                    proxy_attempts += 1
+
+                if not account_proxy:
+                    log("⚠ 连续3次未能成功挂载代理，此账号将使用本地IP")
+                    consecutive_proxy_failures += 1
+
             # 1. 获取签到前积分
             log("📡 获取签到前积分...")
             info_before = get_sign_info(driver, secretkey, label="签到前")
@@ -741,7 +806,7 @@ def process_single_account(username, password, account_index, total_accounts, st
 
             # 2. 执行签到
             log("📡 执行签到...")
-            sign_result = do_sign_in(driver, secretkey)
+            sign_result = do_sign_in(driver, secretkey, proxies=account_proxy)
             result["sign_status"] = sign_result["status"]
 
             if sign_result["status"] == "success":
@@ -763,6 +828,24 @@ def process_single_account(username, password, account_index, total_accounts, st
                 log(f"⚠ 获取签到后积分失败: {info_after.get('error', '未知')}")
 
             # ============ 抽奖阶段 ============
+            log("📄 打开抽奖页面...")
+            try:
+                driver.get(
+                    "https://www.jlc-bbs.com/platform/points-paradise"
+                    "?type=index&id=ab69ff00332949328ba578c086d42141"
+                )
+            except TimeoutException:
+                log("⚠ 抽奖页面加载超时，停止加载继续...")
+                driver.execute_script("window.stop();")
+
+            log("⏳ 等待10秒让页面完全加载...")
+            time.sleep(10)
+
+            # 刷新 secretkey
+            new_sk = extract_secretkey(driver)
+            if new_sk:
+                secretkey = new_sk
+
             # 检查当前积分
             log("📡 检查当前积分...")
             points_info = get_sign_info(driver, secretkey, label="当前")
@@ -802,7 +885,7 @@ def process_single_account(username, password, account_index, total_accounts, st
                 lottery_count = 0
 
                 while True:
-                    lottery_result = do_lottery(driver, secretkey)
+                    lottery_result = do_lottery(driver, secretkey, proxies=account_proxy)
 
                     if lottery_result["status"] == "success":
                         lottery_count += 1
