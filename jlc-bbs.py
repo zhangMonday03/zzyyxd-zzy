@@ -780,6 +780,7 @@ def process_single_account(username, password, account_index, total_accounts, st
                 return result
 
             # 验证BBS会话有效性，无效则尝试通过SSO重新建立
+            # 移除了 proxies 参数，使用直连
             secretkey = validate_and_fix_bbs_session(
                 driver, secretkey, "https://www.jlc-bbs.com/platform/sign"
             )
@@ -814,15 +815,15 @@ def process_single_account(username, password, account_index, total_accounts, st
                         log("⚠ 连续5个账号获取代理失败，后续账号将全部使用本地IP")
                         USE_GLOBAL_PROXY = False
 
-            # 1. 获取签到前积分
+            # 1. 获取签到前积分（不使用代理）
             log("📡 获取签到前积分...")
-            info_before = get_sign_info(driver, secretkey, label="签到前", proxies=account_proxies)
+            info_before = get_sign_info(driver, secretkey, label="签到前")
             if info_before.get("success"):
                 result["sign_before_points"] = info_before["totalScore"]
             else:
                 log(f"⚠ 获取签到前积分失败: {info_before.get('error', '未知')}")
 
-            # 2. 执行签到
+            # 2. 执行签到（使用代理）
             log("📡 执行签到...")
             sign_result = do_sign_in(driver, secretkey, proxies=account_proxies)
             result["sign_status"] = sign_result["status"]
@@ -837,18 +838,18 @@ def process_single_account(username, password, account_index, total_accounts, st
                 result["has_error"] = True
                 log(f"❌ 签到失败: {result['sign_error_msg']}")
 
-            # 3. 获取签到后积分
+            # 3. 获取签到后积分（不使用代理）
             log("📡 获取签到后积分...")
-            info_after = get_sign_info(driver, secretkey, label="签到后", proxies=account_proxies)
+            info_after = get_sign_info(driver, secretkey, label="签到后")
             if info_after.get("success"):
                 result["sign_after_points"] = info_after["totalScore"]
             else:
                 log(f"⚠ 获取签到后积分失败: {info_after.get('error', '未知')}")
 
             # ============ 抽奖阶段 ============
-            # 检查当前积分
+            # 检查当前积分（不使用代理）
             log("📡 检查当前积分...")
-            points_info = get_sign_info(driver, secretkey, label="当前", proxies=account_proxies)
+            points_info = get_sign_info(driver, secretkey, label="当前")
             current_points = 0
             if points_info.get("success"):
                 current_points = points_info["totalScore"]
@@ -861,8 +862,8 @@ def process_single_account(username, password, account_index, total_accounts, st
                     result["lottery_before_points"] = current_points
                     log(f"ℹ 使用签到后积分作为参考: {current_points}")
 
-            # 检查剩余抽奖次数
-            times_info = get_remaining_lottery_times(driver, proxies=account_proxies)
+            # 检查剩余抽奖次数（不使用代理）
+            times_info = get_remaining_lottery_times(driver)
             remaining_times = 0
             if times_info.get("success"):
                 remaining_times = times_info["times"]
@@ -879,7 +880,7 @@ def process_single_account(username, password, account_index, total_accounts, st
                 result["lottery_skip_reason"] = f"积分不足10（当前{current_points}）"
                 log(f"ℹ 积分不足10（当前{current_points}），跳过抽奖")
             else:
-                # 执行抽奖循环
+                # 执行抽奖循环（使用代理）
                 log("🎰 开始抽奖...")
                 result["lottery_status"] = "success"
                 lottery_count = 0
@@ -908,9 +909,9 @@ def process_single_account(username, password, account_index, total_accounts, st
                 if lottery_count > 0:
                     log(f"🎰 共完成 {lottery_count} 次抽奖")
 
-            # 获取抽奖后积分
+            # 获取抽奖后积分（不使用代理）
             log("📡 获取最终积分...")
-            final_info = get_sign_info(driver, secretkey, label="最终", proxies=account_proxies)
+            final_info = get_sign_info(driver, secretkey, label="最终")
             if final_info.get("success"):
                 result["final_points"] = final_info["totalScore"]
                 result["lottery_after_points"] = final_info["totalScore"]
@@ -922,8 +923,9 @@ def process_single_account(username, password, account_index, total_accounts, st
                     result["final_points"] = result["sign_after_points"]
 
             # ============ 鲤鱼卡 ============
+            # 检查鲤鱼卡（不使用代理）
             log("📡 检查鲤鱼卡数量...")
-            koi_result = get_koi_cards(driver, secretkey, proxies=account_proxies)
+            koi_result = get_koi_cards(driver, secretkey)
             if koi_result.get("success"):
                 result["koi_cards"] = koi_result["count"]
                 log(f"🐟 鲤鱼卡数量: {result['koi_cards']}")
