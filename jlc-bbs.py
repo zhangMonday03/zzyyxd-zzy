@@ -368,47 +368,31 @@ def extract_secretkey(driver, max_retries=5):
     return None
 
 def send_bbs_request(driver, url, method="POST", body=None, secretkey="", max_retries=3):
-    """通过浏览器发送 BBS API 请求（自动携带 cookie）"""
+    """通过 requests 发送 BBS API 请求（自动携带 cookie）"""
     for attempt in range(max_retries):
         try:
-            if method.upper() == "POST":
-                if body is not None:
-                    body_str = json.dumps(body, ensure_ascii=False)
-                    js_code = """
-                    var url=arguments[0],bodyData=arguments[1],sk=arguments[2],cb=arguments[3];
-                    fetch(url,{method:'POST',headers:{'Content-Type':'application/json','secretkey':sk},
-                    body:bodyData,credentials:'include'})
-                    .then(function(r){return r.text();})
-                    .then(function(d){cb(d);})
-                    .catch(function(e){cb(JSON.stringify({error:e.toString()}));});
-                    """
-                    result = driver.execute_async_script(js_code, url, body_str, secretkey)
-                else:
-                    js_code = """
-                    var url=arguments[0],sk=arguments[1],cb=arguments[2];
-                    fetch(url,{method:'POST',headers:{'Content-Type':'application/json','secretkey':sk},
-                    credentials:'include'})
-                    .then(function(r){return r.text();})
-                    .then(function(d){cb(d);})
-                    .catch(function(e){cb(JSON.stringify({error:e.toString()}));});
-                    """
-                    result = driver.execute_async_script(js_code, url, secretkey)
-            else:  # GET
-                js_code = """
-                var url=arguments[0],sk=arguments[1],cb=arguments[2];
-                fetch(url,{method:'GET',headers:{'secretkey':sk},credentials:'include'})
-                .then(function(r){return r.text();})
-                .then(function(d){cb(d);})
-                .catch(function(e){cb(JSON.stringify({error:e.toString()}));});
-                """
-                result = driver.execute_async_script(js_code, url, secretkey)
+            cookies = {cookie['name']: cookie['value'] for cookie in driver.get_cookies()}
+            headers = {
+                'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                'secretkey': secretkey,
+                'Accept': 'application/json, text/plain, */*'
+            }
 
-            if result:
+            if method.upper() == "POST":
+                headers['Content-Type'] = 'application/json'
+                if body is not None:
+                    resp = requests.post(url, headers=headers, cookies=cookies, json=body, timeout=15)
+                else:
+                    resp = requests.post(url, headers=headers, cookies=cookies, timeout=15)
+            else:
+                resp = requests.get(url, headers=headers, cookies=cookies, timeout=15)
+
+            if resp.text:
                 try:
-                    parsed = json.loads(result)
+                    parsed = resp.json()
                     return parsed
                 except json.JSONDecodeError:
-                    log(f"⚠ 接口返回非JSON，原文: {result[:500]}")
+                    log(f"⚠ 接口返回非JSON，原文: {resp.text[:500]}")
             else:
                 log("⚠ 接口返回空内容")
 
@@ -561,39 +545,45 @@ def do_sign_in(driver, secretkey, max_retries=3):
 
 def get_remaining_lottery_times(driver, max_retries=3):
     """从前端页面提取剩余抽奖次数"""
+    cookies = {cookie['name']: cookie['value'] for cookie in driver.get_cookies()}
+    headers = {
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    url = "https://www.jlc-bbs.com/platform/points-paradise?type=index&id=ab69ff00332949328ba578c086d42141"
+    
     for attempt in range(max_retries):
         try:
-            page_source = driver.page_source
+            resp = requests.get(url, headers=headers, cookies=cookies, timeout=15)
+            page_source = resp.text
+            
             # 匹配 "今日可抽奖次数：" 后面的数字
             match = re.search(r"今日可抽奖次数：\s*</span>\s*(\d+)\s*次", page_source)
             if match:
                 times = int(match.group(1))
                 log(f"🎰 剩余抽奖次数: {times}")
                 return {"success": True, "times": times}
+                
             # 尝试更宽松的匹配
             match2 = re.search(r"今日可抽奖次数[：:]\s*(\d+)\s*次", page_source)
             if match2:
                 times = int(match2.group(1))
                 log(f"🎰 剩余抽奖次数: {times}")
                 return {"success": True, "times": times}
+                
             # 尝试更宽松的匹配（纯文本）
-            text = driver.find_element(By.TAG_NAME, "body").text
+            text = re.sub(r'<[^>]+>', '', page_source)
             match3 = re.search(r"今日可抽奖次数[：:]\s*(\d+)\s*次", text)
             if match3:
                 times = int(match3.group(1))
                 log(f"🎰 剩余抽奖次数: {times}")
                 return {"success": True, "times": times}
+                
         except Exception as e:
             log(f"⚠ 获取抽奖次数异常: {e}")
 
         if attempt < max_retries - 1:
             log(f"⚠ 未能获取抽奖次数，等待3秒后重试 ({attempt + 1}/{max_retries})...")
             time.sleep(3)
-            try:
-                driver.refresh()
-                time.sleep(5)
-            except Exception:
-                pass
 
     log("⚠ 无法从页面获取剩余抽奖次数")
     return {"success": False, "error": "无法从页面提取抽奖次数"}
@@ -773,24 +763,6 @@ def process_single_account(username, password, account_index, total_accounts, st
                 log(f"⚠ 获取签到后积分失败: {info_after.get('error', '未知')}")
 
             # ============ 抽奖阶段 ============
-            log("📄 打开抽奖页面...")
-            try:
-                driver.get(
-                    "https://www.jlc-bbs.com/platform/points-paradise"
-                    "?type=index&id=ab69ff00332949328ba578c086d42141"
-                )
-            except TimeoutException:
-                log("⚠ 抽奖页面加载超时，停止加载继续...")
-                driver.execute_script("window.stop();")
-
-            log("⏳ 等待10秒让页面完全加载...")
-            time.sleep(10)
-
-            # 刷新 secretkey
-            new_sk = extract_secretkey(driver)
-            if new_sk:
-                secretkey = new_sk
-
             # 检查当前积分
             log("📡 检查当前积分...")
             points_info = get_sign_info(driver, secretkey, label="当前")
