@@ -93,7 +93,7 @@ def get_valid_proxy(account_proxy_fails):
                 log(f"🔗 成功获取到代理: {ip}:{port} [位置: {city}]，正在进行可用性测试...")
 
                 try:
-                    test_resp = requests.get("https://www.jlc-bbs.com", proxies={"http": proxy_str, "https": proxy_str}, timeout=5)
+                    test_resp = requests.get("https://m.jlc.com", proxies={"http": proxy_str, "https": proxy_str}, timeout=5)
                     if test_resp.status_code == 200:
                         log("✅ 代理测试成功，延迟正常")
                         return proxy_str, account_proxy_fails
