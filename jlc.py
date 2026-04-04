@@ -283,6 +283,7 @@ class JLCClient:
         else:
             error_msg = data.get('message', '未知错误') if data else '请求失败'
             log(f"账号 {self.account_index} - ❌ 获取用户信息失败: {error_msg}")
+            self.sign_status = f"获取用户信息失败:{error_msg}"
             return False
     
     def get_points(self):
@@ -335,7 +336,7 @@ class JLCClient:
         else:
             error_msg = data.get('message', '未知错误') if data else '请求失败'
             log(f"账号 {self.account_index} - ❌ 检查签到状态失败: {error_msg}")
-            self.sign_status = "检查签到状态失败"
+            self.sign_status = f"检查状态失败:{error_msg}"
             return None
     
     def sign_in(self):
@@ -358,18 +359,19 @@ class JLCClient:
                 self.has_reward = True
                 
                 # 领取奖励
-                if self.receive_voucher():
+                voucher_success, voucher_msg = self.receive_voucher()
+                if voucher_success:
                     # 领取奖励成功后，视为签到完成
                     log(f"账号 {self.account_index} - ✅ 奖励领取成功，签到完成")
                     self.sign_status = "领取奖励成功"
                     return True
                 else:
-                    self.sign_status = "领取奖励失败"
+                    self.sign_status = f"领取奖励失败:{voucher_msg}"
                     return False
         else:
             error_msg = data.get('message', '未知错误') if data else '请求失败'
             log(f"账号 {self.account_index} - ❌ 签到失败: {error_msg}")
-            self.sign_status = "签到失败"
+            self.sign_status = f"签到失败:{error_msg}"
             return False
     
     def receive_voucher(self):
@@ -380,11 +382,11 @@ class JLCClient:
         
         if data and data.get('success'):
             log(f"账号 {self.account_index} - ✅ 领取成功")
-            return True
+            return True, "成功"
         else:
             error_msg = data.get('message', '未知错误') if data else '请求失败'
             log(f"账号 {self.account_index} - ❌ 领取奖励失败: {error_msg}")
-            return False
+            return False, error_msg
     
     def calculate_jindou_difference(self):
         """计算金豆差值"""
@@ -906,6 +908,11 @@ def process_single_account(username, password, account_index, total_accounts):
         # 合并结果
         if result.get('jlc_login_success'):
             merged_result['jlc_login_success'] = True
+            
+        # 【核心修改点1】始终更新实际密码信息（只要账号密码校验通过/取到了 authCode，即使后续签到接口失败，也保留密码供Excel展示）
+        if result.get('actual_password') is not None and merged_result.get('actual_password') is None:
+            merged_result['actual_password'] = result['actual_password']
+            merged_result['backup_index'] = result['backup_index']
         
         # 合并金豆结果：如果本次成功且之前未成功，则更新
         if result['jindou_success'] and not merged_success['jindou']:
@@ -915,10 +922,6 @@ def process_single_account(username, password, account_index, total_accounts):
             merged_result['final_jindou'] = result['final_jindou']
             merged_result['jindou_reward'] = result['jindou_reward']
             merged_result['has_jindou_reward'] = result['has_jindou_reward']
-            # 更新实际密码信息
-            if merged_result['actual_password'] is None:
-                merged_result['actual_password'] = result['actual_password']
-                merged_result['backup_index'] = result['backup_index']
         
         # 即使签到失败，也保留已获取到的金豆数据（用于Excel显示）
         if not merged_success['jindou']:
