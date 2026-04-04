@@ -909,7 +909,6 @@ def process_single_account(username, password, account_index, total_accounts):
         if result.get('jlc_login_success'):
             merged_result['jlc_login_success'] = True
             
-        # 【核心修改点1】始终更新实际密码信息（只要账号密码校验通过/取到了 authCode，即使后续签到接口失败，也保留密码供Excel展示）
         if result.get('actual_password') is not None and merged_result.get('actual_password') is None:
             merged_result['actual_password'] = result['actual_password']
             merged_result['backup_index'] = result['backup_index']
