@@ -57,13 +57,13 @@ def get_valid_proxy(account_proxy_fails):
     if GLOBAL_PROXY_DISABLE:
         return None, account_proxy_fails
 
-    if account_proxy_fails >= 3:
+    if account_proxy_fails >= 100:
         return None, account_proxy_fails
 
     api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=7db2f497&pwd=2051b6d39963f332116779a42367a8ef&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
 
     while True:
-        if account_proxy_fails >= 3:
+        if account_proxy_fails >= 100:
             return None, account_proxy_fails
 
         try:
@@ -1033,7 +1033,7 @@ def process_single_account(username, password, account_index, total_accounts, st
             return result
             
         finally:
-            if account_proxy_fails >= 3 and not proxy_used_successfully:
+            if account_proxy_fails >= 100 and not proxy_used_successfully:
                 CONSECUTIVE_PROXY_ACCOUNT_FAILS += 1
                 log(f"⚠ 该账号未能成功挂上任何可用代理，当前连续获取代理失败账号数: {CONSECUTIVE_PROXY_ACCOUNT_FAILS}")
                 if CONSECUTIVE_PROXY_ACCOUNT_FAILS >= 5 and not GLOBAL_PROXY_DISABLE:
