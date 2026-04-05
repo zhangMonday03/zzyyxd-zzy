@@ -7,6 +7,8 @@ import subprocess
 import re
 import shutil
 import requests
+import threading
+import queue
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -171,7 +173,26 @@ def call_aliv3min_with_timeout(timeout_seconds=180, max_retries=18):
                 errors="ignore",
             )
 
+            q = queue.Queue()
+            def enqueue_output(out, queue_obj):
+                try:
+                    for line in iter(out.readline, ''):
+                        queue_obj.put(line)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        out.close()
+                    except Exception:
+                        pass
+
+            t = threading.Thread(target=enqueue_output, args=(process.stdout, q))
+            t.daemon = True
+            t.start()
+
             start_time = time.time()
+            wait_for_next_line = False
+
             while True:
                 if time.time() - start_time > timeout_seconds:
                     log(f"⏰ 登录脚本超过 {timeout_seconds} 秒未完成，强制终止...")
@@ -183,35 +204,37 @@ def call_aliv3min_with_timeout(timeout_seconds=180, max_retries=18):
                     break
 
                 try:
-                    line = process.stdout.readline()
-                    if line:
-                        if "SUCCESS: Obtained CaptchaTicket:" in line:
-                            next_line = process.stdout.readline()
-                            if next_line:
-                                captcha_ticket = next_line.strip()
-                                log("✅ 成功获取 captchaTicket")
-                                try:
-                                    process.terminate()
-                                    process.wait(timeout=5)
-                                except Exception:
-                                    pass
-                                return captcha_ticket
-
-                        if "captchaTicket" in line:
-                            match = re.search(r'"captchaTicket"\s*:\s*"([^"]+)"', line)
-                            if match:
-                                log("✅ 成功获取 captchaTicket")
-                                try:
-                                    process.terminate()
-                                    process.wait(timeout=5)
-                                except Exception:
-                                    pass
-                                return match.group(1)
-
-                    if process.poll() is not None:
+                    line = q.get(timeout=0.5)
+                except queue.Empty:
+                    if process.poll() is not None and not t.is_alive():
                         break
-                except Exception:
-                    time.sleep(0.1)
+                    continue
+
+                if line:
+                    if wait_for_next_line:
+                        captcha_ticket = line.strip()
+                        log("✅ 成功获取 captchaTicket")
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except Exception:
+                            pass
+                        return captcha_ticket
+
+                    if "SUCCESS: Obtained CaptchaTicket:" in line:
+                        wait_for_next_line = True
+                        continue
+
+                    if "captchaTicket" in line:
+                        match = re.search(r'"captchaTicket"\s*:\s*"([^"]+)"', line)
+                        if match:
+                            log("✅ 成功获取 captchaTicket")
+                            try:
+                                process.terminate()
+                                process.wait(timeout=5)
+                            except Exception:
+                                pass
+                            return match.group(1)
 
             # 确保进程终止
             if process and process.poll() is None:
@@ -786,7 +809,15 @@ def process_single_account(username, password, account_index, total_accounts, st
     global CONSECUTIVE_PROXY_ACCOUNT_FAILS, GLOBAL_PROXY_DISABLE
     backup_passwords = [
         "Aa123123",
-        "134613461346zzY"
+        "Zz123123",
+        "Qq123123",
+        "Ss123123",
+        "Xx123123",
+        "Yuanxd20031024",
+        "jjl1775774A",
+        "qeowowe5472",
+        "Wyf349817236",
+        "Bb123123"
     ]
     
     all_passwords = [password]
