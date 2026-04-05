@@ -6,6 +6,8 @@ import tempfile
 import subprocess
 import re
 import shutil
+import threading
+import queue
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -100,8 +102,27 @@ def call_aliv3min_with_timeout(timeout_seconds=180, max_retries=18):
                 errors='ignore'
             )
             
+            # 引入非阻塞队列读取
+            q = queue.Queue()
+            def enqueue_output(out, queue_obj):
+                try:
+                    for line in iter(out.readline, ''):
+                        queue_obj.put(line)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        out.close()
+                    except Exception:
+                        pass
+
+            t = threading.Thread(target=enqueue_output, args=(process.stdout, q))
+            t.daemon = True
+            t.start()
+
             start_time = time.time()
             captcha_ticket = None
+            wait_for_next_line = False
             
             while True:
                 elapsed = time.time() - start_time
@@ -116,15 +137,34 @@ def call_aliv3min_with_timeout(timeout_seconds=180, max_retries=18):
                     break
                 
                 try:
-                    line = process.stdout.readline()
-                    if line:
-                        output_lines.append(line)  # 保存所有输出
-                        
-                        if "SUCCESS: Obtained CaptchaTicket:" in line:
-                            next_line = process.stdout.readline()
-                            if next_line:
-                                output_lines.append(next_line)
-                                captcha_ticket = next_line.strip()
+                    line = q.get(timeout=0.5)
+                except queue.Empty:
+                    if process.poll() is not None and not t.is_alive():
+                        break
+                    continue
+                
+                if line:
+                    output_lines.append(line)  # 保存所有输出
+                    
+                    if wait_for_next_line:
+                        captcha_ticket = line.strip()
+                        log(f"✅ 成功获取 captchaTicket")
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except:
+                            pass
+                        return captcha_ticket
+
+                    if "SUCCESS: Obtained CaptchaTicket:" in line:
+                        wait_for_next_line = True
+                        continue
+
+                    if "captchaTicket" in line:
+                        try:
+                            match = re.search(r'"captchaTicket"\s*:\s*"([^"]+)"', line)
+                            if match:
+                                captcha_ticket = match.group(1)
                                 log(f"✅ 成功获取 captchaTicket")
                                 try:
                                     process.terminate()
@@ -132,32 +172,8 @@ def call_aliv3min_with_timeout(timeout_seconds=180, max_retries=18):
                                 except:
                                     pass
                                 return captcha_ticket
-
-                        if "captchaTicket" in line:
-                            try:
-                                match = re.search(r'"captchaTicket"\s*:\s*"([^"]+)"', line)
-                                if match:
-                                    captcha_ticket = match.group(1)
-                                    log(f"✅ 成功获取 captchaTicket")
-                                    try:
-                                        process.terminate()
-                                        process.wait(timeout=5)
-                                    except:
-                                        pass
-                                    return captcha_ticket
-                            except:
-                                pass
-                    
-                    if process.poll() is not None:
-                        # 进程已结束，读取剩余输出
-                        remaining = process.stdout.read()
-                        if remaining:
-                            output_lines.extend(remaining.splitlines(keepends=True))
-                        break
-                        
-                except Exception as e:
-                    log(f"⚠ 读取输出时出错: {e}")
-                    time.sleep(0.1)
+                        except:
+                            pass
             
             # 如果没有获取到 captchaTicket
             if not captcha_ticket:
