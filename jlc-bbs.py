@@ -80,10 +80,12 @@ def get_valid_proxy(account_proxy_fails):
 
             if data.get("code") == 605:
                 log(f"ℹ 代理API返回: {data.get('msg')}，程序等待15秒后继续获取...")
+                account_proxy_fails += 1
                 time.sleep(15)
                 continue
             elif data.get("code") == 1 and "Too Many Requests" in data.get("msg", ""):
                 log("ℹ 代理API返回Too Many Requests，等待5秒后继续获取...")
+                account_proxy_fails += 1
                 time.sleep(5)
                 continue
             elif data.get("code") == 0 and data.get("data"):
@@ -101,9 +103,11 @@ def get_valid_proxy(account_proxy_fails):
                         return proxy_str, account_proxy_fails
                     else:
                         log(f"⚠ 代理测试失败 (HTTP {test_resp.status_code})，重新获取IP...")
+                        account_proxy_fails += 1
                         continue 
                 except Exception:
                     log(f"⚠ 代理测试请求超时或连接失败，重新获取IP...")
+                    account_proxy_fails += 1
                     continue 
             else:
                 log(f"⚠ 获取代理失败，API返回内容: {data}")
