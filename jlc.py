@@ -165,13 +165,6 @@ def extract_secretkey_from_devtools(driver):
     
     return secretkey
 
-def check_proxy(proxies):
-    try:
-        res = requests.get("https://m.jlc.com", proxies=proxies, timeout=5)
-        return res.status_code == 200
-    except:
-        return False
-
 def get_valid_proxy(account_index):
     proxy_api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=b345ad7e&pwd=bca1fcb138fb91448d9cfe7f1099c6f6&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
     max_attempts = 100
@@ -209,13 +202,8 @@ def get_valid_proxy(account_index):
                         "http": proxy_url,
                         "https": proxy_url
                     }
-                    if check_proxy(proxies):
-                        log(f"账号 {account_index} - ✅ 代理获取并验证成功: {ip}:{port} [{city}]")
-                        return proxies
-                    else:
-                        log(f"账号 {account_index} - ⚠ 获取到的代理不可用，准备重新获取...")
-                        attempt += 1
-                        continue
+                    log(f"账号 {account_index} - ✅ 代理获取成功: {ip}:{port} [{city}]")
+                    return proxies
             
             log(f"账号 {account_index} - ⚠ 代理获取失败，接口返回: {json.dumps(data, ensure_ascii=False)}")
             attempt += 1
@@ -225,7 +213,7 @@ def get_valid_proxy(account_index):
             attempt += 1
             time.sleep(2)
     
-    log(f"账号 {account_index} - ❌ 连续100次获取或验证代理失败，放弃使用代理")
+    log(f"账号 {account_index} - ❌ 连续100次获取代理失败，放弃使用代理")
     return None
 
 class JLCClient:
@@ -253,23 +241,71 @@ class JLCClient:
         
     def send_request(self, url, method='GET', use_proxy=False):
         """发送 API 请求"""
-        try:
-            # 根据 use_proxy 参数决定是否使用代理
-            req_proxies = self.proxies if use_proxy else None
+        global disable_global_proxy, consecutive_proxy_fails
+        
+        if use_proxy and not disable_global_proxy:
+            max_proxy_retries = 20
+            for attempt in range(max_proxy_retries):
+                if not self.proxies:
+                    self.proxies = get_valid_proxy(self.account_index)
+                    
+                if not self.proxies:
+                    log(f"账号 {self.account_index} - ❌ 代理获取失败，放弃本次请求。")
+                    consecutive_proxy_fails += 1
+                    if consecutive_proxy_fails >= 5:
+                        disable_global_proxy = True
+                        log("⚠ 连续5个账号代理获取失败，接下来的账号全部放弃使用代理！")
+                    return None
+                
+                try:
+                    if method.upper() == 'GET':
+                        response = requests.get(url, headers=self.headers, timeout=10, proxies=self.proxies)
+                    else:
+                        response = requests.post(url, headers=self.headers, timeout=10, proxies=self.proxies)
+                    
+                    if response.status_code == 200:
+                        consecutive_proxy_fails = 0
+                        return response.json()
+                    else:
+                        log(f"账号 {self.account_index} - ❌ 请求失败，状态码: {response.status_code}")
+                        return None
+                        
+                except requests.exceptions.ProxyError as e:
+                    log(f"账号 {self.account_index} - ⚠ 代理无效 (代理错误/拒绝连接): {e}，准备重新获取...")
+                    self.proxies = None
+                except requests.exceptions.ConnectTimeout as e:
+                    log(f"账号 {self.account_index} - ⚠ 代理无效 (连接超时): {e}，准备重新获取...")
+                    self.proxies = None
+                except requests.exceptions.ReadTimeout as e:
+                    log(f"账号 {self.account_index} - ⚠ 代理无效 (响应超时): {e}，准备重新获取...")
+                    self.proxies = None
+                except requests.exceptions.ConnectionError as e:
+                    log(f"账号 {self.account_index} - ⚠ 代理无效 (连接异常): {e}，准备重新获取...")
+                    self.proxies = None
+                except requests.exceptions.RequestException as e:
+                    log(f"账号 {self.account_index} - ⚠ 代理无效 (请求异常): {e}，准备重新获取...")
+                    self.proxies = None
+                except Exception as e:
+                    log(f"账号 {self.account_index} - ⚠ 请求出现未知异常 ({url}): {e}，准备重新获取...")
+                    self.proxies = None
             
-            if method.upper() == 'GET':
-                response = requests.get(url, headers=self.headers, timeout=10, proxies=req_proxies)
-            else:
-                response = requests.post(url, headers=self.headers, timeout=10, proxies=req_proxies)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                log(f"账号 {self.account_index} - ❌ 请求失败，状态码: {response.status_code}")
-                return None
-        except Exception as e:
-            log(f"账号 {self.account_index} - ❌ 请求异常 ({url}): {e}")
+            log(f"账号 {self.account_index} - ❌ 连续 {max_proxy_retries} 次代理请求均失败。")
             return None
+        else:
+            try:
+                if method.upper() == 'GET':
+                    response = requests.get(url, headers=self.headers, timeout=10)
+                else:
+                    response = requests.post(url, headers=self.headers, timeout=10)
+                
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    log(f"账号 {self.account_index} - ❌ 请求失败，状态码: {response.status_code}")
+                    return None
+            except Exception as e:
+                log(f"账号 {self.account_index} - ❌ 请求异常 ({url}): {e}")
+                return None
     
     def get_user_info(self):
         """获取用户信息"""
