@@ -62,7 +62,7 @@ def get_valid_proxy(account_proxy_fails):
     if account_proxy_fails >= 100:
         return None, account_proxy_fails
 
-    api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=7db2f497&pwd=2051b6d39963f332116779a42367a8ef&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
+    api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=b345ad7e&pwd=bca1fcb138fb91448d9cfe7f1099c6f6&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
 
     while True:
         if account_proxy_fails >= 100:
