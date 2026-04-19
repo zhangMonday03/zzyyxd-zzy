@@ -9,7 +9,7 @@ on:
 jobs:
   # ==================================================================================
   # 数据预处理
-  # 读取 Secret JLC_ACCOUNT，清洗数据，按50个一组生成矩阵 JSON
+  # 读取 Secret JLC_ACCOUNT，清洗数据，按100个一组生成矩阵 JSON
   # ==================================================================================
   generate-matrix:
     runs-on: ubuntu-latest
@@ -45,8 +45,8 @@ jobs:
 
           print(f"Total valid accounts found: {len(accounts)}")
 
-          # 按50个一组切分
-          chunk_size = 50
+          # 按100个一组切分
+          chunk_size = 100
           chunks = []
           total_chunks = math.ceil(len(accounts) / chunk_size)
 
