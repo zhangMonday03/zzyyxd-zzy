@@ -129,8 +129,9 @@ def generate_excel():
     now = datetime.now()
     month = now.month
     day = now.day
+    total_accounts = summary_info['total_accounts']
     
-    filename = f"{month}.{day}立创金豆排名.xlsx"
+    filename = f"{month}.{day}立创金豆排名(共签到{total_accounts}个账号).xlsx"
     
     wb = Workbook()
     ws = wb.active
@@ -465,12 +466,13 @@ def get_push_content():
     now = datetime.now()
     month = now.month
     day = now.day
+    total_accounts = summary_info['total_accounts']
     
     failed_count = len(summary_info['failed_accounts'])
     pwd_error_count = len(summary_info['password_error_accounts'])
     
     if failed_count == 0 and pwd_error_count == 0:
-        return f"{month}月{day}日ZZY立创金豆签到已全部成功"
+        return f"{month}月{day}日ZZY立创金豆签到已全部成功(共签到{total_accounts}个账号)"
     else:
         content_parts = []
         
@@ -497,7 +499,7 @@ def get_push_content():
             for group, indices in pwd_by_group.items():
                 content_parts.append(f"{group}组账号{','.join(indices)}(密码错误)")
         
-        return f"{month}月{day}日ZZY立创金豆签到有{'/'.join(content_parts)}失败"
+        return f"{month}月{day}日ZZY立创金豆签到有{'/'.join(content_parts)}失败(共签到{total_accounts}个账号)"
 
 def get_workflow_url():
     """获取GitHub Actions工作流运行页面链接"""
