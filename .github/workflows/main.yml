@@ -3,8 +3,8 @@ name: 嘉立创自动签到
 on:
   workflow_dispatch: # 手动触发
   schedule:
-    # 触发时间 (北京时间 7:00)
-    - cron: '0 23 * * *'
+    # 触发时间 (北京时间 6:00)
+    - cron: '0 22 * * *'
 
 env:
   # 设置时区为北京时间
@@ -79,7 +79,7 @@ jobs:
     needs: generate-matrix
     runs-on: ubuntu-22.04
     strategy:
-      max-parallel: 1
+      max-parallel: 2
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
