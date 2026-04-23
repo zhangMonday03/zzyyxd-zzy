@@ -29,6 +29,7 @@ jobs:
           import os
           import json
           import math
+          import random
 
           raw_data = os.environ.get('RAW_ACCOUNTS', '')
           accounts = []
@@ -65,6 +66,8 @@ jobs:
                   "pwds": pwds_str
               })
 
+          random.shuffle(chunks)
+
           matrix_json = json.dumps(chunks)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"matrix={matrix_json}\n")
@@ -76,7 +79,7 @@ jobs:
     needs: generate-matrix
     runs-on: ubuntu-22.04
     strategy:
-      max-parallel: 20
+      max-parallel: 1
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
