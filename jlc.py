@@ -995,9 +995,9 @@ def process_single_account(username, password, account_index, total_accounts):
     if not skip_jindou_signin and merged_result['jlc_login_success']:
         if not merged_result['jindou_success']:
             consecutive_jindou_fails += 1
-            if consecutive_jindou_fails >= 3:
+            if consecutive_jindou_fails >= 50:
                 skip_jindou_signin = True
-                log("⚠ 连续3个账号金豆签到失败，接下来的账号跳过金豆签到流程！")
+                log("⚠ 连续50个账号金豆签到失败，接下来的账号跳过金豆签到流程！")
         else:
             consecutive_jindou_fails = 0
     # ------------------------------------------------
