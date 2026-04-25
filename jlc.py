@@ -414,6 +414,7 @@ class JLCClient:
                     return False
         else:
             error_msg = data.get('message', '未知错误') if data else '请求失败'
+            self.message = error_msg
             log(f"账号 {self.account_index} - ❌ 签到失败: {error_msg}")
             self.sign_status = f"签到失败:{error_msg}"
             return False
@@ -636,7 +637,8 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
         'actual_password': None,  # 实际使用的密码
         'backup_index': -1,  # 使用的备用密码索引，-1表示原密码
         'critical_error': False,  #标记严重错误（如多次调用依赖失败），需跳过重试
-        'jlc_login_success': False # 标记金豆签到的JLC登录是否成功
+        'jlc_login_success': False, # 标记金豆签到的JLC登录是否成功
+        'rule_violation': False   # 标记是否违反签到规则
     }
     
     # 显式创建临时目录用于 user-data-dir，以便后续清理
@@ -861,6 +863,8 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                         log(f"账号 {account_index} - ✅ 金豆签到流程完成")
                     else:
                         log(f"账号 {account_index} - ❌ 金豆签到流程失败")
+                        if "疑似违反签到规则" in jlc_client.message:
+                            result['rule_violation'] = True
                 else:
                     log(f"账号 {account_index} - ❌ 无法提取到 token 或 secretkey，跳过金豆签到")
                     result['jindou_status'] = 'Token提取失败'
@@ -914,7 +918,8 @@ def process_single_account(username, password, account_index, total_accounts):
         'actual_password': None,  # 实际使用的密码
         'backup_index': -1,  # 使用的备用密码索引，-1表示原密码
         'critical_error': False,   # 标记严重错误
-        'jlc_login_success': False
+        'jlc_login_success': False,
+        'rule_violation': False    # 标记是否违反签到规则
     }
     
     merged_success = {'jindou': False}
@@ -977,6 +982,12 @@ def process_single_account(username, password, account_index, total_accounts):
         # 更新retry_count为最后一次尝试的
         merged_result['retry_count'] = result['retry_count']
         
+        # 检查是否疑似违反签到规则
+        if result.get('rule_violation'):
+            merged_result['rule_violation'] = True
+            log(f"账号 {account_index} - ❌ 签到接口提示疑似违反签到规则，该账号不进行重试，直接开始下一个账号")
+            break
+
         # 检查是否还需要重试（排除密码错误的情况）
         if not should_retry(merged_success, merged_result['password_error']) or attempt >= max_retries:
             break
