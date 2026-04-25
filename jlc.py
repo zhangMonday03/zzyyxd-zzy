@@ -50,7 +50,7 @@ for attempt in range(max_import_retries):
 
 # 全局变量用于收集总结日志
 in_summary = False
-summary_logs = []
+summary_logs =[]
 
 # 全局连续失败状态控制
 consecutive_jindou_fails = 0
@@ -94,7 +94,7 @@ def extract_token_from_local_storage(driver):
             log(f"✅ 成功从 localStorage 提取 token: {token[:30]}...")
             return token
         else:
-            alternative_keys = [
+            alternative_keys =[
                 "x-jlc-accesstoken",
                 "accessToken", 
                 "token",
@@ -166,6 +166,7 @@ def extract_secretkey_from_devtools(driver):
     return secretkey
 
 def get_valid_proxy(account_index):
+    global disable_global_proxy, consecutive_proxy_fails
     proxy_api_url = "http://api.dmdaili.com/dmgetip.asp?apikey=b345ad7e&pwd=bca1fcb138fb91448d9cfe7f1099c6f6&getnum=1&httptype=1&geshi=2&fenge=1&fengefu=&operate=all"
     max_attempts = 100
     attempt = 0
@@ -185,10 +186,12 @@ def get_valid_proxy(account_index):
 
             if data.get("code") == 605:
                 log(f"账号 {account_index} - 代理IP已自动添加到白名单，等待15秒后重试...")
+                attempt += 1
                 time.sleep(15)
                 continue 
             elif data.get("code") == 1 and "Too Many Requests" in data.get("msg", ""):
                 log(f"账号 {account_index} - 代理API请求过快，等待5秒后重试...")
+                attempt += 1
                 time.sleep(5)
                 continue
             elif data.get("code") == 0 and data.get("data"):
@@ -214,6 +217,10 @@ def get_valid_proxy(account_index):
             time.sleep(2)
     
     log(f"账号 {account_index} - ❌ 连续100次获取代理失败，放弃使用代理")
+    consecutive_proxy_fails += 1
+    if consecutive_proxy_fails >= 5:
+        disable_global_proxy = True
+        log("⚠ 连续5次代理获取/使用失败，接下来的账号全部放弃使用代理！")
     return None
 
 class JLCClient:
@@ -251,10 +258,7 @@ class JLCClient:
                     
                 if not self.proxies:
                     log(f"账号 {self.account_index} - ❌ 代理获取失败，放弃本次请求。")
-                    consecutive_proxy_fails += 1
-                    if consecutive_proxy_fails >= 5:
-                        disable_global_proxy = True
-                        log("⚠ 连续5个账号代理获取失败，接下来的账号全部放弃使用代理！")
+                    # get_valid_proxy 内部已经处理了获取失败时 consecutive_proxy_fails += 1
                     return None
                 
                 try:
@@ -290,6 +294,10 @@ class JLCClient:
                     self.proxies = None
             
             log(f"账号 {self.account_index} - ❌ 连续 {max_proxy_retries} 次代理请求均失败。")
+            consecutive_proxy_fails += 1
+            if consecutive_proxy_fails >= 5:
+                disable_global_proxy = True
+                log("⚠ 连续5次代理获取/使用失败，接下来的账号全部放弃使用代理！")
             return None
         else:
             try:
@@ -652,7 +660,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     
     driver = None
     
-    backup_passwords = [
+    backup_passwords =[
         "Aa123123",
         "134613461346zzY"
     ]
@@ -832,19 +840,10 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                 if access_token and secretkey:
                     log(f"账号 {account_index} - ✅ 成功提取 token 和 secretkey")
                     
-                    global disable_global_proxy, consecutive_proxy_fails
+                    global disable_global_proxy
                     current_proxies = None
                     
-                    if not disable_global_proxy:
-                        current_proxies = get_valid_proxy(account_index)
-                        if current_proxies:
-                            consecutive_proxy_fails = 0
-                        else:
-                            consecutive_proxy_fails += 1
-                            if consecutive_proxy_fails >= 5:
-                                disable_global_proxy = True
-                                log("⚠ 连续5个账号代理获取失败，接下来的账号全部放弃使用代理！")
-                    else:
+                    if disable_global_proxy:
                         log(f"账号 {account_index} - ⚠ 已全局禁用代理，直接使用本地IP")
                     
                     jlc_client = JLCClient(access_token, secretkey, account_index, driver, current_proxies)
@@ -1204,7 +1203,7 @@ def main():
     log(f"开始处理 {total_accounts} 个账号的签到任务")
     
     # 存储所有账号的结果
-    all_results = []
+    all_results =[]
     
     for i, (username, password) in enumerate(zip(usernames, passwords), 1):
         log(f"开始处理第 {i} 个账号")
@@ -1223,8 +1222,8 @@ def main():
     
     jindou_success_count = 0
     total_jindou_reward = 0
-    retried_accounts = []  # 合并所有重试过的账号
-    password_error_accounts = []  # 密码错误的账号
+    retried_accounts =[]  # 合并所有重试过的账号
+    password_error_accounts =[]  # 密码错误的账号
     
     # 记录失败的账号
     failed_accounts = []
@@ -1321,7 +1320,7 @@ def main():
         push_summary()
     
     # 生成 password-changed.txt
-    changed_accounts = [result for result in all_results if result.get('backup_index', -1) >= 0 and not result.get('password_error', False) and result['actual_password'] is not None]
+    changed_accounts =[result for result in all_results if result.get('backup_index', -1) >= 0 and not result.get('password_error', False) and result['actual_password'] is not None]
     if changed_accounts:
         with open('password-changed.txt', 'w', encoding='utf-8') as f:
             for result in changed_accounts:
@@ -1336,7 +1335,7 @@ def main():
     try:
         result_data = {
             'group_index': int(account_group) if account_group else 0,
-            'accounts': []
+            'accounts':[]
         }
         
         for i, result in enumerate(all_results):
