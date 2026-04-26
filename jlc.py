@@ -679,7 +679,8 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
         'backup_index': -1,  # 使用的备用密码索引，-1表示原密码
         'critical_error': False,  #标记严重错误（如多次调用依赖失败），需跳过重试
         'jlc_login_success': False, # 标记金豆签到的JLC登录是否成功
-        'rule_violation': False   # 标记是否违反签到规则
+        'rule_violation': False,  # 标记是否违反签到规则
+        'unclaimed_reward': False # 标记是否存在签到未领取
     }
     
     # 显式创建临时目录用于 user-data-dir，以便后续清理
@@ -906,6 +907,8 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                         log(f"账号 {account_index} - ❌ 金豆签到流程失败")
                         if "疑似违反签到规则" in jlc_client.message:
                             result['rule_violation'] = True
+                        if "存在签到未领取，请先领取!" in jlc_client.message:
+                            result['unclaimed_reward'] = True
                 else:
                     log(f"账号 {account_index} - ❌ 无法提取到 token 或 secretkey，跳过金豆签到")
                     result['jindou_status'] = 'Token提取失败'
@@ -960,7 +963,8 @@ def process_single_account(username, password, account_index, total_accounts):
         'backup_index': -1,  # 使用的备用密码索引，-1表示原密码
         'critical_error': False,   # 标记严重错误
         'jlc_login_success': False,
-        'rule_violation': False    # 标记是否违反签到规则
+        'rule_violation': False,   # 标记是否违反签到规则
+        'unclaimed_reward': False  # 标记是否存在签到未领取
     }
     
     merged_success = {'jindou': False}
@@ -1027,6 +1031,12 @@ def process_single_account(username, password, account_index, total_accounts):
         if result.get('rule_violation'):
             merged_result['rule_violation'] = True
             log(f"账号 {account_index} - ❌ 签到接口提示疑似违反签到规则，该账号不进行重试，直接开始下一个账号")
+            break
+
+        # 检查是否存在签到未领取
+        if result.get('unclaimed_reward'):
+            merged_result['unclaimed_reward'] = True
+            log(f"账号 {account_index} - ❌ 签到接口提示存在签到未领取，该账号不进行重试，直接开始下一个账号")
             break
 
         # 检查是否还需要重试（排除密码错误的情况）
