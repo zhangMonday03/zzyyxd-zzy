@@ -1033,10 +1033,10 @@ def process_single_account(username, password, account_index, total_accounts):
             log(f"账号 {account_index} - ❌ 签到接口提示疑似违反签到规则，该账号不进行重试，直接开始下一个账号")
             break
 
-        # 检查是否存在签到未领取
+        # 检查是否存在奖励未领取
         if result.get('unclaimed_reward'):
             merged_result['unclaimed_reward'] = True
-            log(f"账号 {account_index} - ❌ 签到接口提示存在签到未领取，该账号不进行重试，直接开始下一个账号")
+            log(f"账号 {account_index} - ❌ 签到接口提示存在奖励未领取，该账号不进行重试，直接开始下一个账号")
             break
 
         # 检查是否还需要重试（排除密码错误的情况）
