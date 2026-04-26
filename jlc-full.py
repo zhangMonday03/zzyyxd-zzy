@@ -366,15 +366,35 @@ class JLCClient:
         """获取用户信息"""
         log(f"账号 {self.account_index} - 获取用户信息...")
         url = f"{self.base_url}/api/appPlatform/center/setting/selectPersonalInfo"
-        data = self.send_request(url)
         
-        if data and data.get('success'):
-            log(f"账号 {self.account_index} - ✅ 用户信息获取成功")
-            return True
-        else:
-            error_msg = data.get('message', '未知错误') if data else '请求失败'
-            log(f"账号 {self.account_index} - ❌ 获取用户信息失败: {error_msg}")
-            return False
+        max_retries = 5
+        for attempt in range(max_retries):
+            data = self.send_request(url)
+            
+            if data and data.get('success'):
+                log(f"账号 {self.account_index} - ✅ 用户信息获取成功")
+                return True
+                
+            # 重试前刷新页面，重新提取 token 和 secretkey
+            if attempt < max_retries - 1:
+                try:
+                    self.driver.get("https://m.jlc.com/")
+                    self.driver.refresh()
+                    WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                    time.sleep(1 + random.uniform(0, 1))
+                    navigate_and_interact_m_jlc(self.driver, self.account_index)
+                    access_token = extract_token_from_local_storage(self.driver)
+                    secretkey = extract_secretkey_from_devtools(self.driver)
+                    if access_token:
+                        self.headers['x-jlc-accesstoken'] = access_token
+                    if secretkey:
+                        self.headers['secretkey'] = secretkey
+                except:
+                    pass  # 静默继续
+        
+        error_msg = data.get('message', '未知错误') if data else '请求失败'
+        log(f"账号 {self.account_index} - ❌ 获取用户信息失败: {error_msg}")
+        return False
     
     def get_points(self):
         """获取金豆数量"""
@@ -411,29 +431,49 @@ class JLCClient:
         """检查签到状态"""
         log(f"账号 {self.account_index} - 检查签到状态...")
         url = f"{self.base_url}/api/activity/sign/getCurrentUserSignInConfig"
-        data = self.send_request(url)
         
-        if data and data.get('success'):
-            have_sign_in = data.get('data', {}).get('haveSignIn', False)
-            if have_sign_in:
-                log(f"账号 {self.account_index} - ✅ 今日已签到")
-                self.sign_status = "已签到过"
-                return True
-            else:
-                log(f"账号 {self.account_index} - 今日未签到")
-                self.sign_status = "未签到"
-                return False
-        else:
-            error_msg = data.get('message', '未知错误') if data else '请求失败'
-            log(f"账号 {self.account_index} - ❌ 检查签到状态失败: {error_msg}")
-            self.sign_status = "检查失败"
-            return None
+        max_retries = 5
+        for attempt in range(max_retries):
+            data = self.send_request(url)
+            
+            if data and data.get('success'):
+                have_sign_in = data.get('data', {}).get('haveSignIn', False)
+                if have_sign_in:
+                    log(f"账号 {self.account_index} - ✅ 今日已签到")
+                    self.sign_status = "已签到过"
+                    return True
+                else:
+                    log(f"账号 {self.account_index} - 今日未签到")
+                    self.sign_status = "未签到"
+                    return False
+                    
+            # 重试前刷新页面，重新提取 token 和 secretkey
+            if attempt < max_retries - 1:
+                try:
+                    self.driver.get("https://m.jlc.com/")
+                    self.driver.refresh()
+                    WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                    time.sleep(1 + random.uniform(0, 1))
+                    navigate_and_interact_m_jlc(self.driver, self.account_index)
+                    access_token = extract_token_from_local_storage(self.driver)
+                    secretkey = extract_secretkey_from_devtools(self.driver)
+                    if access_token:
+                        self.headers['x-jlc-accesstoken'] = access_token
+                    if secretkey:
+                        self.headers['secretkey'] = secretkey
+                except:
+                    pass  # 静默继续
+        
+        error_msg = data.get('message', '未知错误') if data else '请求失败'
+        log(f"账号 {self.account_index} - ❌ 检查签到状态失败: {error_msg}")
+        self.sign_status = "检查失败"
+        return None
     
     def sign_in(self):
         """执行签到"""
         log(f"账号 {self.account_index} - 执行签到 (使用代理)...")
         url = f"{self.base_url}/api/activity/sign/signIn?source=4"
-        # ⚠️ 仅在签到接口显式使用代理
+        # ⚠️ 签到及领取奖励接口显式使用代理
         data = self.send_request(url, use_proxy=True)
         
         if data and data.get('success'):
@@ -466,9 +506,10 @@ class JLCClient:
     
     def receive_voucher(self):
         """领取奖励"""
-        log(f"账号 {self.account_index} - 领取奖励...")
+        log(f"账号 {self.account_index} - 领取奖励 (使用代理)...")
         url = f"{self.base_url}/api/activity/sign/receiveVoucher"
-        data = self.send_request(url)
+        # ⚠️ 签到及领取奖励接口显式使用代理
+        data = self.send_request(url, use_proxy=True)
         
         if data and data.get('success'):
             log(f"账号 {self.account_index} - ✅ 领取成功")
