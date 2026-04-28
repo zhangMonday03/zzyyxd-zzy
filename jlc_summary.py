@@ -9,12 +9,12 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # 全局变量用于存储汇总数据
-all_accounts = []
+all_accounts =[]
 summary_info = {
     'total_groups': 0,
     'total_accounts': 0,
     'success_accounts': 0,
-    'failed_accounts': [],
+    'failed_accounts':[],
     'password_error_accounts': []
 }
 
@@ -23,14 +23,14 @@ def log(msg):
 
 def parse_result_file(filepath):
     """解析单个账号组的结果文件"""
-    accounts = []
+    accounts =[]
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
             data = json.loads(content)
             
             group_index = data.get('group_index', 0)
-            group_accounts = data.get('accounts', [])
+            group_accounts = data.get('accounts',[])
             
             for acc in group_accounts:
                 acc['group_index'] = group_index
@@ -108,17 +108,21 @@ def get_display_status(acc):
     
     jindou_status = acc.get('jindou_status', '未知')
     jindou_success = acc.get('jindou_success', False)
+    has_weekly_reward = acc.get('has_weekly_reward', False)
+    has_special_reward = acc.get('has_special_reward', False)
     
     if jindou_success:
-        # 成功的状态统一显示
         if jindou_status == '已签到过':
             return '已签到过'
-        elif jindou_status == '领取奖励成功':
-            return '签到成功(有奖励)'
-        elif jindou_status == '签到成功':
-            return '签到成功'
-        else:
-            return '签到成功'
+        
+        # 动态拼接奖励标识
+        suffix = ""
+        if has_weekly_reward:
+            suffix += "(有周奖)"
+        if has_special_reward:
+            suffix += "(有奖励)"
+            
+        return f"签到成功{suffix}"
     else:
         # 失败的状态直接显示原因
         return jindou_status
@@ -138,7 +142,7 @@ def generate_excel():
     ws.title = "金豆排名"
     
     # 设置标题行
-    headers = ['排名', '金豆数量', '客编', '密码', '归属账号组', '签到状态', '年底预计']
+    headers =['排名', '金豆数量', '客编', '密码', '归属账号组', '签到状态', '年底预计']
     ws.append(headers)
     
     # 设置标题行样式
@@ -186,7 +190,7 @@ def generate_excel():
         else:
             year_end_prediction = ''
         
-        row_data = [
+        row_data =[
             rank,
             display_jindou,
             username,
@@ -221,7 +225,7 @@ def generate_excel():
                 if password_error:
                     cell.font = status_styles['password']
                 elif jindou_success:
-                    if display_status == '已签到过':
+                    if '已签到过' in display_status:
                         cell.font = status_styles['already']
                     else:
                         cell.font = status_styles['success']
@@ -284,7 +288,7 @@ def generate_excel():
             
         global_rank = acc.get('global_rank', '')
         
-        row_data = [
+        row_data =[
             global_rank, display_jindou, username, display_password,
             f"{group_index}组账号{acc.get('account_index', 0)}", display_status, year_end_prediction
         ]
@@ -307,7 +311,7 @@ def generate_excel():
                 if password_error:
                     cell.font = status_styles['password']
                 elif jindou_success:
-                    if display_status == '已签到过':
+                    if '已签到过' in display_status:
                         cell.font = status_styles['already']
                     else:
                         cell.font = status_styles['success']
@@ -376,7 +380,7 @@ def generate_excel():
             
         global_rank = acc.get('global_rank', '')
         
-        row_data = [
+        row_data =[
             global_rank, display_jindou, username, display_password,
             f"{group_index}组账号{acc.get('account_index', 0)}", display_status, year_end_prediction
         ]
@@ -399,7 +403,7 @@ def generate_excel():
                 if password_error:
                     cell.font = status_styles['password']
                 elif jindou_success:
-                    if display_status == '已签到过':
+                    if '已签到过' in display_status:
                         cell.font = status_styles['already']
                     else:
                         cell.font = status_styles['success']
@@ -418,7 +422,8 @@ def generate_excel():
     # ==============================
     # 全局格式设置（列宽、边框、冻结窗格）
     # ==============================
-    column_widths = [8, 12, 18, 15, 18, 18, 12]
+    # 适当加大状态列的宽度以容纳更长状态文本
+    column_widths =[8, 12, 18, 15, 18, 22, 12]
     thin_border = Border(
         left=Side(style='thin'),
         right=Side(style='thin'),
@@ -474,7 +479,7 @@ def get_push_content():
     if failed_count == 0 and pwd_error_count == 0:
         return f"{month}月{day}日ZZY立创金豆签到已全部成功(共签到{total_accounts}个账号)"
     else:
-        content_parts = []
+        content_parts =[]
         
         if failed_count > 0:
             # 按组分类失败账号
