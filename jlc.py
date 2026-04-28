@@ -976,8 +976,6 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
                         if "疑似违反签到规则" in jlc_client.message:
                             result['rule_violation'] = True
                         if "存在签到未领取，请先领取!" in jlc_client.message:
-                            # 经过代码改造后，正常情况下应该已经被内部解锁并重新签到。
-                            # 如果此时还能捕获到，说明解锁逻辑均执行失败，放弃重试。
                             result['unclaimed_reward'] = True
                 else:
                     log(f"账号 {account_index} - ❌ 无法提取到 token 或 secretkey，跳过金豆签到")
@@ -1105,10 +1103,10 @@ def process_single_account(username, password, account_index, total_accounts):
             log(f"账号 {account_index} - ❌ 签到接口提示疑似违反签到规则，该账号不进行重试，直接开始下一个账号")
             break
 
-        # 检查是否存在奖励未领取 (这说明内部自动解锁领奖机制也失败了)
+        # 检查是否存在奖励未领取
         if result.get('unclaimed_reward'):
             merged_result['unclaimed_reward'] = True
-            log(f"账号 {account_index} - ❌ 特殊奖励解锁均失败，该账号不进行重试，直接开始下一个账号")
+            log(f"账号 {account_index} - ❌ 有程序无法处理的奖励未领取，该账号不进行重试，直接开始下一个账号")
             break
 
         # 检查是否还需要重试（排除密码错误的情况）
