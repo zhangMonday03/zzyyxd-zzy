@@ -602,7 +602,7 @@ class JLCClient:
         return True
 
 def navigate_and_interact_m_jlc(driver, account_index):
-    """在 m.jlc.com 刷新以触发网络请求"""
+    """在 m.jlc.com 刷新以触发 network 请求"""
     log(f"账号 {account_index} - 刷新页面以获取 Token 和 SecretKey...")
     
     try:
@@ -771,7 +771,7 @@ def sign_in_account(username, password, account_index, total_accounts, retry_cou
     
     driver = None
     
-    backup_passwords =[
+    backup_passwords = [
         "Aa123123",
         "134613461346zzY"
     ]
@@ -1014,6 +1014,30 @@ def should_retry(merged_success, password_error):
 
 def process_single_account(username, password, account_index, total_accounts):
     """处理单个账号，包含重试机制，并合并多次尝试的最佳结果"""
+    # 2. 加上随机不签到功能，每个账号有1%的概率不执行签到
+    if random.random() < 0.01:
+        log(f"账号 {account_index} - 🎲 抽中 1% 随机停签，跳过该账号运行下一个账号 [停签一次防风控]")
+        return {
+            'account_index': account_index,
+            'jindou_status': '停签一次防风控',
+            'jindou_success': True,  # 标记为 True 防止整体流程报错并使汇总将其按成功处理
+            'initial_jindou': 0,
+            'final_jindou': 0,
+            'jindou_reward': 0,
+            'has_weekly_reward': False,
+            'has_special_reward': False,
+            'token_extracted': False,
+            'secretkey_extracted': False,
+            'retry_count': 0,
+            'password_error': False,
+            'actual_password': password,
+            'backup_index': -1,
+            'critical_error': False,
+            'jlc_login_success': False,
+            'rule_violation': False,
+            'unclaimed_reward': False
+        }
+
     max_retries = 3  # 最多重试3次
     merged_result = {
         'account_index': account_index,
@@ -1343,7 +1367,8 @@ def main():
         all_results.append(result)
         
         if i < total_accounts:
-            wait_time = random.randint(3, 5)
+            # 1. 每个账号签到之间随机延迟15-30秒
+            wait_time = random.randint(15, 30)
             log(f"等待 {wait_time} 秒后处理下一个账号...")
             time.sleep(wait_time)
     
@@ -1371,7 +1396,7 @@ def main():
         if retry_count > 0:
             retried_accounts.append(account_index)
         
-        # 检查是否有失败情况（排除密码错误）
+        # 检查是否有失败情况（排除密码错误和停签一次防风控账号）
         if not result['jindou_success'] and not password_error:
             failed_accounts.append(account_index)
         
